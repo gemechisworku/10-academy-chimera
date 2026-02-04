@@ -1,1 +1,1 @@
-# 10-academy-chimera
+# Chimera - 3Day Challenge Project
