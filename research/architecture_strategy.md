@@ -325,28 +325,13 @@ The Judge is the sole router of these artifacts into:
 
 ---
 
-## 7. Target Deliverables for Next Tasks (to keep Day 2/3 coherent)
-
-This Task 1.2 architecture implies concrete spec artifacts you’ll likely write in Task 2:
-
-- **specs/technical.md**
-  - Task & Result schemas (JSON)
-  - HITL queue contract (status transitions)
-  - Core Postgres ERD (campaigns, assets, renders, posts, analytics, audits)
-- **specs/functional.md**
-  - user stories for network operator / HITL reviewer
-- **specs/openclaw_integration.md** (optional)
-  - how agent publishes its availability/status to the agent social network
-
----
-
-## 8. Summary of Final Decisions
+## 7. Summary of Final Decisions
 
 - **Agent Pattern:** Adopt **Hierarchical Swarm (Planner–Worker–Judge)** as the canonical runtime model; it is explicitly specified by the SRS and supports high parallelism + governance + OCC correctness. ""  
 - **Human-in-the-Loop:** Implement HITL as a **Judge‑routed Safety Layer** with confidence tiers + sensitive-topic overrides, surfaced through a dashboard **HITL queue** for Approve/Reject/Edit. ""  
 - **Database for high‑velocity video metadata:** Use **PostgreSQL (SQL) as the source of truth**, with partitioned append-only event tables, normalized lineage, JSONB payload snapshots, and object storage for blobs. This aligns with the SRS transactional persistence choice and supports governance/traceability. ""
 
-## 9. The highlevel architectural diagram
+## 8. The highlevel architectural diagram
 flowchart TB
   %% Control Plane
   OP["Human Super-Orchestrator"] --> DASH["Orchestrator Dashboard / Mission Control"]
