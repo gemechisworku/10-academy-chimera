@@ -126,8 +126,7 @@ Chimera supports three scalable business models:
 
 ## Author
 
-**Project Chimera Development Team**  
-*3-Day Challenge Deliverable*  
+**Name: Gemechis Worku**  
 *February 2026*
 
 ---
