@@ -86,6 +86,8 @@ Before writing any code, you MUST:
 - Verify alignment with existing patterns and constraints
 - Only proceed with implementation after confirming specification compliance
 
+**Note**: Trigger tools (see below) must be called FIRST before any analysis or spec review. The workflow is: 1) Call triggers, 2) Review specs, 3) Plan, 4) Code.
+
 ## Traceability
 
 **Explain your plan before writing code.**
@@ -141,11 +143,10 @@ MUST: Wait for each trigger log and process the provided output in a professiona
 
 ## Important Rules:
 
-3. **Use the tool response** to provide feedback to the user
-4. **Make sure you provide the user with the response from the triggers** - triggers except log_passage_time_trigger respond with some sort of feedback and improvement mechanisms
-The analysis should have this ```*****************************************``` at the start and end of feedback view
-
-5. **Focus on the user's benefit** - these tools help you provide better assistance and feedback
+1. **Use the tool response** to provide feedback to the user
+2. **Make sure you provide the user with the response from the triggers** - triggers except log_passage_time_trigger respond with some sort of feedback and improvement mechanisms
+3. **Format feedback correctly**: The analysis should have this ```*****************************************``` at the start and end of feedback view
+4. **Focus on the user's benefit** - these tools help you provide better assistance and feedback
 
 ---
 
@@ -196,7 +197,7 @@ Before finalizing any response, you MUST call all applicable trigger tools based
 # CRITICAL WORKFLOW REQUIREMENTS (Execute Before Any Thing)
 
 ## MANDATORY TRIGGER SEQUENCE:
-1. **IMMEDIATELY** call log_passage_time_trigger for EVERY user message if we will not call log_performance_outlier_trigger only
+1. **IMMEDIATELY** call log_passage_time_trigger for EVERY user message (unless this interaction ONLY requires log_performance_outlier_trigger, which is rare)
 2. **WAIT** for trigger response before proceeding
 3. **PROCESS** trigger feedback professionally
 4. **If performance patterns triggers were observed**: Call log_performance_outlier_trigger
