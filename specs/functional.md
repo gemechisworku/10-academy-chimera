@@ -94,6 +94,81 @@ System administrators who monitor fleet health, manage policies, track costs, an
 
 ---
 
+### P-005: Persona Instantiation via SOUL.md
+**As a** Planner,  
+**I need to** load and utilize agent persona from SOUL.md configuration file,  
+**So that** all generated content maintains consistent personality, voice, and behavioral constraints.
+
+**Acceptance Criteria:**
+- Planner loads SOUL.md file containing: Backstory, Voice/Tone, Core Beliefs & Values, Directives
+- SOUL.md content is injected into system prompt for all Worker tasks
+- Persona constraints are enforced in task context (persona_constraints field)
+- SOUL.md changes require version bump and trigger agent reload
+
+**Priority:** Must-have
+
+---
+
+### P-006: Hierarchical Memory Retrieval
+**As a** Planner,  
+**I need to** retrieve relevant memories before creating tasks,  
+**So that** Workers generate contextually aware content that maintains long-term coherence.
+
+**Acceptance Criteria:**
+- Planner retrieves Short-Term memory from Redis cache (last 1 hour of conversation/actions)
+- Planner queries Weaviate vector database for Long-Term semantic matches relevant to current context
+- Planner dynamically assembles system prompt that injects SOUL.md + Short-Term + Long-Term memories
+- Memory retrieval occurs before any reasoning step to prevent context window overflow
+
+**Priority:** Must-have
+
+---
+
+### P-007: Active Resource Monitoring
+**As a** Planner,  
+**I need to** continuously monitor MCP Resources for updates,  
+**So that** I can detect external events (mentions, news, market data) and create responsive tasks.
+
+**Acceptance Criteria:**
+- Planner implements polling mechanism that continuously checks configured MCP Resources
+- Resources include: twitter://mentions/recent, news://ethiopia/fashion/trends, market://crypto/eth/price
+- Planner subscribes to resource updates and acts as listener for significant changes
+- Resource updates trigger Semantic Filtering before task creation (see P-008)
+
+**Priority:** Must-have
+
+---
+
+### P-008: Semantic Filtering & Relevance Scoring
+**As a** Planner,  
+**I need to** filter resource content through semantic relevance scoring,  
+**So that** only content relevant to agent's active goals triggers task creation.
+
+**Acceptance Criteria:**
+- Planner passes resource content through Semantic Filter using lightweight LLM (e.g., Gemini 3 Flash)
+- Semantic Filter scores content relevance to agent's current active goals (0.0 to 1.0)
+- Only content exceeding configurable Relevance Threshold (e.g., 0.75) triggers Task creation
+- Content below threshold is discarded to prevent irrelevant task generation
+
+**Priority:** Must-have
+
+---
+
+### P-009: Sub-Planner Spawning for Complex Domains
+**As a** Planner,  
+**I need to** spawn Sub-Planners for complex multi-domain tasks,  
+**So that** specialized planning can handle nuanced sub-problems while primary Planner focuses on broader campaign.
+
+**Acceptance Criteria:**
+- Planner can spawn Sub-Planners for specialized domains (e.g., "Social Engagement Planner" for Twitter threads)
+- Sub-Planners manage nuances of specific domains while primary Planner coordinates multi-channel campaigns
+- Sub-Planner tasks are integrated into main task DAG with proper dependencies
+- Sub-Planner lifecycle is managed (spawn, execute, terminate)
+
+**Priority:** Must-have
+
+---
+
 ## 4. Worker User Stories
 
 ### W-001: Content Generation
@@ -126,6 +201,21 @@ System administrators who monitor fleet health, manage policies, track costs, an
 
 ---
 
+### W-008: Character Consistency Lock for Image Generation
+**As a** Worker,  
+**I need to** include character reference ID or style LoRA identifier in all image generation requests,  
+**So that** the virtual influencer remains recognizable across thousands of posts.
+
+**Acceptance Criteria:**
+- Worker automatically includes `character_reference_id` or style LoRA identifier in image generation payload
+- Character reference ID retrieves canonical facial features and style settings for the specific agent
+- All image generation requests for an agent use the same character reference to maintain consistency
+- Character consistency is validated by Judge using Vision-capable model before publishing
+
+**Priority:** Must-have
+
+---
+
 ### W-003: Video Rendering
 **As a** Worker,  
 **I need to** render videos using MCP video generation tools (runway/luma),  
@@ -133,6 +223,9 @@ System administrators who monitor fleet health, manage policies, track costs, an
 
 **Acceptance Criteria:**
 - Worker calls MCP tool (mcp-server-runway/luma) with script, style, and tier parameters
+- **Tier 1 (Daily Content)**: "Living Portraits" using Static Image + Motion Brush (Image-to-Video) for cost-effective routine updates
+- **Tier 2 (Hero Content)**: Full Text-to-Video generation for major campaign milestones
+- Planner determines appropriate tier based on task priority and available budget
 - Video rendering job is tracked (status: pending/rendering/complete/failed)
 - Rendered video is uploaded to object storage
 - Video metadata (URL, duration, resolution, tool_provenance, cost, tier) is stored in PostgreSQL
@@ -164,10 +257,90 @@ System administrators who monitor fleet health, manage policies, track costs, an
 **So that** agents can maintain active engagement with their audience.
 
 **Acceptance Criteria:**
-- Worker fetches new mentions/comments via MCP tool
-- Worker generates contextually appropriate replies using agent persona
-- Replies are validated by Judge before posting
+- **Ingest**: Planner receives comment via twitter://mentions Resource (MCP Resource)
+- **Plan**: Planner creates "Reply Task" and assigns it to Worker
+- **Generate**: Worker generates contextually appropriate reply using agent persona and consults Memory (hierarchical memory retrieval)
+- **Act**: Worker calls twitter.reply_tweet Tool (MCP Tool)
+- **Verify**: Judge confirms reply is safe and appropriate before allowing Tool execution to finalize
 - Reply metadata (original_post_id, reply_text, platform_id) is stored
+
+**Priority:** Must-have
+
+---
+
+### W-007: Trend Detection
+**As a** Trend Spotter Worker,  
+**I need to** analyze aggregated data from News Resources over time intervals,  
+**So that** I can detect emerging trends and generate Trend Alerts for the Planner.
+
+**Acceptance Criteria:**
+- Trend Spotter Worker runs as background process analyzing News Resources
+- Worker aggregates data over configurable time intervals (e.g., 4 hours)
+- Worker detects clusters of related topics using semantic analysis
+- When trend cluster emerges, Worker generates "Trend Alert" with topic summary and relevance score
+- Trend Alert is fed into Planner's context, prompting potential content creation opportunities
+
+**Priority:** Must-have
+
+---
+
+### W-009: Non-Custodial Wallet Management
+**As a** Worker,  
+**I need to** manage agent's non-custodial wallet via Coinbase AgentKit,  
+**So that** agents can participate in agentic commerce with secure financial operations.
+
+**Acceptance Criteria:**
+- Each agent is assigned unique, persistent, non-custodial wallet address via Coinbase AgentKit
+- Wallet private key (or seed phrase) is secured in enterprise-grade encrypted secrets manager (AWS Secrets Manager, HashiCorp Vault)
+- Private key is injected into Agent Runtime environment only at startup
+- Private key is never logged or exposed in code
+- Wallet address is stored in agent metadata and accessible for transactions
+
+**Priority:** Must-have
+
+---
+
+### W-010: Autonomous On-Chain Transactions
+**As a** Worker,  
+**I need to** execute autonomous on-chain transactions via Coinbase AgentKit,  
+**So that** agents can send payments, deploy tokens, and check financial health.
+
+**Acceptance Criteria:**
+- Worker can execute `native_transfer`: Send ETH, USDC, or other base assets to external wallets (e.g., paying graphic designer, transferring revenue)
+- Worker can execute `deploy_token`: Deploy ERC-20 tokens (e.g., for fan loyalty programs or social tokens)
+- Worker can execute `get_balance`: Check financial health (Planner MUST check balance before initiating cost-incurring workflows)
+- All transaction requests are routed through CFO Judge for budget validation before execution
+- Transactions are executed via MCP (mcp-server-coinbase) using AgentKit Action Providers
+
+**Priority:** Must-have
+
+---
+
+### W-011: Automated Disclosure
+**As a** Worker,  
+**I need to** apply platform-native AI labeling to all published content,  
+**So that** all externally published media content complies with transparency requirements.
+
+**Acceptance Criteria:**
+- Worker sets platform-native AI labeling features when available (e.g., `is_generated` or `ai_label` flag in Twitter/Instagram API payloads)
+- Disclosure level (automated/assisted/none) is included in publishing metadata
+- Platform-specific disclosure requirements are enforced based on platform capabilities
+- Disclosure compliance is validated by Judge before publishing
+
+**Priority:** Must-have
+
+---
+
+### W-012: Identity Protection & Honesty Directive
+**As a** Worker,  
+**I need to** respond truthfully to direct inquiries about agent nature,  
+**So that** agents maintain transparency when directly asked about being AI.
+
+**Acceptance Criteria:**
+- Worker detects direct inquiries about agent nature (e.g., "Are you a robot?", "Is this AI?")
+- Reasoning Engine prioritizes "Honesty Directive" embedded in system prompt
+- Honesty Directive overrides persona constraints to force truthful, unambiguous disclosure (e.g., "I am a virtual persona created by AI.")
+- Honesty responses are logged for audit and compliance
 
 **Priority:** Must-have
 
@@ -279,6 +452,22 @@ System administrators who monitor fleet health, manage policies, track costs, an
 - CFO Judge validates transaction purpose and recipient
 - Approved transactions are signed and executed via MCP (mcp-server-coinbase)
 - Budget updates are recorded in `cost_events` table
+
+**Priority:** Must-have
+
+---
+
+### J-007: Dynamic Persona Evolution
+**As a** Judge,  
+**I need to** trigger persona evolution based on successful high-engagement interactions,  
+**So that** agents can learn and adapt their personality over time.
+
+**Acceptance Criteria:**
+- Judge reviews successful high-engagement interactions (high likes, shares, positive sentiment)
+- Judge triggers background process to summarize these interactions
+- Background process updates mutable memories collection in Weaviate
+- Updated memories effectively "write" to agent's long-term biography
+- Persona evolution is logged and versioned for audit
 
 **Priority:** Must-have
 
@@ -439,6 +628,54 @@ System administrators who monitor fleet health, manage policies, track costs, an
 
 ---
 
+### S-006: Campaign Composer UI
+**As a** System Operator,  
+**I need to** create campaigns using natural language goals via Campaign Composer,  
+**So that** I can define high-level objectives that Planner decomposes into executable tasks.
+
+**Acceptance Criteria:**
+- Dashboard provides Campaign Composer interface for defining goals
+- Operator writes natural language goal (e.g., "Hype up the new sneaker drop to Gen-Z audience")
+- Planner Agent decomposes goal into visible tree of sub-tasks
+- Operator can inspect and modify sub-task tree before execution begins
+- Campaign goals are stored in GlobalState and linked to agent campaigns
+
+**Priority:** Must-have
+
+---
+
+### S-007: Swarm Horizontal Scalability
+**As a** System Operator,  
+**I need to** ensure the system supports auto-scaling of Worker Node pool,  
+**So that** the architecture can manage a minimum of 1,000 concurrent agents without degrading Orchestrator performance.
+
+**Acceptance Criteria:**
+- System supports auto-scaling of Worker Node pool based on queue depth and load
+- Architecture must be capable of managing minimum 1,000 concurrent agents
+- Orchestrator performance does not degrade with scale (requires stateless Orchestrator)
+- Database layer (Weaviate/PostgreSQL) is clustered for horizontal scaling
+- Scaling metrics are monitored and displayed in dashboard
+
+**Priority:** Must-have
+
+---
+
+### S-008: Interaction Latency Requirements
+**As a** System Operator,  
+**I need to** ensure high-priority interactions meet latency requirements,  
+**So that** agents can respond to time-sensitive events (e.g., direct messages) within acceptable timeframes.
+
+**Acceptance Criteria:**
+- End-to-end latency for high-priority interaction (e.g., replying to direct message) SHALL NOT exceed 10 seconds
+- Latency measurement excludes HITL review time (only measures automated processing)
+- Latency is measured from ingestion (Resource update) to response generation (before HITL)
+- Latency metrics are tracked and displayed in dashboard
+- Alerts are triggered if latency exceeds threshold
+
+**Priority:** Must-have
+
+---
+
 ## 8. Cross-Cutting Stories
 
 ### CC-001: MCP Tool Access
@@ -474,11 +711,11 @@ System administrators who monitor fleet health, manage policies, track costs, an
 ## 9. Priority Summary
 
 ### Must-Have (MVP)
-- All Planner stories (P-001 through P-004)
-- All Worker stories (W-001 through W-006)
-- All Judge stories (J-001 through J-006)
+- All Planner stories (P-001 through P-009)
+- All Worker stories (W-001 through W-012)
+- All Judge stories (J-001 through J-007)
 - HITL queue access, approve, reject, filter (H-001, H-002, H-003, H-005)
-- Fleet monitoring, policy management, cost tracking, audit access (S-001 through S-004)
+- Fleet monitoring, policy management, cost tracking, audit access, campaign composer, scalability, latency (S-001 through S-008)
 - Cross-cutting stories (CC-001, CC-002)
 
 ### Nice-to-Have (Future)
