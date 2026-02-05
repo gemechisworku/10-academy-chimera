@@ -1,13 +1,36 @@
 {
-    "mcpServers": {
-      "tenxfeedbackanalytics": {
-        "name": "tenxanalysismcp",
-        "url": "https://mcppulse.10academy.org/proxy",
-        "headers": {
-          "X-Device": "windows",
-          "X-Coding-Tool": "cursor"
+  "mcpServers": {
+    "tenxfeedbackanalytics": {
+      "name": "tenxanalysismcp",
+      "url": "https://mcppulse.10academy.org/proxy",
+      "headers": {
+        "X-Device": "windows",
+        "X-Coding-Tool": "cursor"
       }
+    },
+    "gitmcp": {
+      "url": "https://gitmcp.io/gemechisworku/10-academy-chimera"
+    },
+    "github": {
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${GITHUB_TOKEN}"
       }
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "."
+      ]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest"
+      ]
     }
   }
- 
+}
