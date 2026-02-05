@@ -2,7 +2,99 @@
 alwaysApply: true
 ---
 
+# Project Context
+
+**This is Project Chimera, an autonomous influencer system.**
+
+## High-Level Project Description
+
+Project Chimera (AiQEM Autonomous Influencer Network) is an **enterprise-grade, cloud-native platform** designed to operate large fleets of persistent AI influencer agents (1,000+) with centralized governance. The system enables a single operator or small team to manage thousands of autonomous influencer agents simultaneously, each capable of:
+
+- Generating high-velocity content (text, images, videos)
+- Engaging across multiple social platforms (Twitter/X, Instagram, TikTok)
+- Participating in agent-native networks (OpenClaw, Moltbook)
+- Conducting agentic commerce (on-chain transactions via Coinbase AgentKit)
+- Maintaining brand safety and policy compliance through Human-in-the-Loop (HITL) governance
+
+The system uses a **hub-and-spoke architecture** with a Central Orchestrator managing agent fleets. Each agent internally operates as a **hierarchical Planner–Worker–Judge swarm** for parallel execution and quality control. All external interactions route through **Model Context Protocol (MCP)** servers to isolate platform volatility and enable centralized governance.
+
+Unlike consumer-grade AI assistants, Chimera enforces enterprise-level governance, safety, economic controls, and auditability while maximizing throughput and maintaining quality.
+
+## Specifications Directory (`specs/`) - Purpose and Usage
+
+The `specs/` directory contains the definitive specifications for Project Chimera. **You MUST review relevant specs before implementing any feature or making architectural decisions.**
+
+### When to Review Specs
+
+- **Before writing any code**: Always check `specs/` for requirements, constraints, and patterns
+- **When implementing a new feature**: Review functional specs for user stories and acceptance criteria
+- **When designing APIs or data models**: Review technical specs for contracts and schemas
+- **When making architectural decisions**: Review `_meta.md` for core principles and non-negotiable constraints
+- **When integrating external systems**: Review relevant integration specs (e.g., `openclaw_integration.md`)
+
+### Spec Files and Their Purposes
+
+1. **`specs/_meta.md`** — **Start here for architectural understanding**
+   - Project vision and core architectural principles
+   - Hub-and-spoke topology, FastRender Swarm pattern, MCP-only interface
+   - Non-negotiable constraints (OCC, confidence scoring, cost governance)
+   - Technology stack and risk mitigation strategies
+   - **Use when**: Understanding system architecture, validating design decisions, checking constraints
+
+2. **`specs/functional.md`** — **User stories and acceptance criteria**
+   - User stories from actor perspectives (Planner, Worker, Judge, Human Moderator, System Operator)
+   - Acceptance criteria for each feature
+   - Priority levels and dependencies
+   - **Use when**: Implementing features, understanding requirements, writing tests
+
+3. **`specs/technical.md`** — **API contracts and database schemas**
+   - JSON schemas for all API endpoints (Planner, Worker, Judge, Orchestrator)
+   - Database ERD and table definitions
+   - Pydantic model specifications
+   - **Use when**: Implementing APIs, designing data models, validating payloads
+
+4. **`specs/openclaw_integration.md`** — **OpenClaw network integration**
+   - Integration patterns for agent-native social networks
+   - Status broadcasting and capability exposure
+   - Governance and policy compliance for OpenClaw interactions
+   - **Use when**: Implementing OpenClaw features, agent-to-agent communication
+
+### Project Intent and Strategic Knowledge
+
+For comprehensive understanding of project intent, business models, strategic objectives, and detailed system requirements, **refer to `research/project_chimera_srs_document.md`** (Software Requirements Specification). This document provides:
+
+- Strategic scope and business model evolution
+- Detailed system architecture and component descriptions
+- Complete functional requirements with implementation notes
+- Agentic commerce capabilities and economic agency
+- Compliance, security, and operational requirements
+
+**Use the SRS document when**: You need deep context on project goals, business rationale, detailed component behavior, or comprehensive requirement understanding beyond what's in the specs directory.
+
 # Agent Operating System (Cursor)
+
+## The Prime Directive
+
+**NEVER generate code without checking specs/ first.**
+
+Before writing any code, you MUST:
+- Review relevant specifications in the `specs/` directory (see "Specifications Directory" section above for guidance)
+- Start with `specs/_meta.md` for architectural principles and constraints
+- Check `specs/functional.md` for user stories and acceptance criteria
+- Review `specs/technical.md` for API contracts and database schemas
+- Understand the project requirements and architecture
+- Verify alignment with existing patterns and constraints
+- Only proceed with implementation after confirming specification compliance
+
+## Traceability
+
+**Explain your plan before writing code.**
+
+Always provide a clear, structured plan that:
+- Describes what you will implement and why
+- References relevant specifications or requirements
+- Outlines the approach and any design decisions
+- Allows for review and feedback before implementation begins
 
 ## Response format (always)
 1) Understanding (1–2 sentences)
@@ -14,21 +106,21 @@ alwaysApply: true
 
 ## Execution rules
 - Make minimal diffs; prefer small, reviewable changes.
-- Don’t invent APIs or files—verify from repo context or ask.
+- Don't invent APIs or files—verify from repo context or ask.
 - If requirements are ambiguous, ask 1–2 targeted questions; otherwise proceed with clear assumptions.
 
 ## Verification loop (required)
-Before saying “done”, include at least one:
+Before saying "done", include at least one:
 - Tests to run (or add a tiny smoke check if no tests exist)
 - Edge cases to consider
 
 ## Safety
-- Don’t delete/rename files unless explicitly asked.
+- Don't delete/rename files unless explicitly asked.
 - Avoid destructive commands; ask first if needed.
 - Never output secrets/tokens.
 
 ## Living-rules habit
-If the agent makes a repeated mistake, propose an update to this file so it doesn’t happen again.
+If the agent makes a repeated mistake, propose an update to this file so it doesn't happen again.
 
 # 🚨 CRITICAL: TRIGGER TOOLS MUST BE CALLED FIRST 🚨
 
