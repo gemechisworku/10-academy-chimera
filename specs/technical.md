@@ -35,7 +35,7 @@ This document defines API contracts (JSON schemas) and database schema (ERD) for
   "context": {
     "state_version": "integer",
     "current_tasks": ["task_id"],
-    "episodic_memory": "string (optional)"
+    "episodic_memory_ref": "string (optional, Redis key reference for episodic memory - last 1 hour window)"
   },
   "persona_config": {
     "agent_id": "string",
@@ -54,13 +54,21 @@ This document defines API contracts (JSON schemas) and database schema (ERD) for
         "task_id": "string (UUID)",
         "agent_id": "string",
         "task_type": "generate_text|generate_image|render_video|post_content|engage_reply",
+        "priority": "high|medium|low",
         "dependencies": ["task_id"],
+        "context": {
+          "goal_description": "string",
+          "persona_constraints": ["string"],
+          "required_resources": ["mcp://twitter/mentions/123", "mcp://memory/recent"]
+        },
         "parameters": {
           "prompt": "string",
           "platform": "twitter|instagram|tiktok",
-          "tier": "string (optional, for video generation)",
+          "tier": "tier_1_daily|tier_2_hero (optional, for video generation)",
+          "character_reference_id": "string (optional, for image generation)",
           "mcp_tool": "string"
         },
+        "assigned_worker_id": "string (optional)",
         "created_at": "ISO8601 datetime"
       }
     ],
@@ -74,6 +82,8 @@ This document defines API contracts (JSON schemas) and database schema (ERD) for
   "state_version_snapshot": "integer"
 }
 ```
+
+**Note**: Episodic memory is stored in Redis (high-speed cache) for the last 1 hour window. The `episodic_memory_ref` field is a Redis key reference, not the actual content. Use the Memory Retrieval API (Section 2.1.4) to fetch episodic memory content.
 
 ---
 
@@ -111,6 +121,106 @@ This document defines API contracts (JSON schemas) and database schema (ERD) for
 
 ---
 
+#### 2.1.3 Semantic Filter & Relevance Scoring
+
+**Endpoint**: `POST /planner/semantic-filter`
+
+**Request Schema**:
+```json
+{
+  "agent_id": "string",
+  "content": {
+    "type": "text|image|video",
+    "content": "string",
+    "source": "string (e.g., mcp://twitter/mentions/123)"
+  },
+  "context": {
+    "active_goals": ["goal_id"],
+    "relevance_threshold": "float (default: 0.75)"
+  }
+}
+```
+
+**Response Schema**:
+```json
+{
+  "filtered": "boolean",
+  "relevance_score": "float (0.0 to 1.0)",
+  "relevance_threshold": "float",
+  "reasoning": "string",
+  "should_create_task": "boolean"
+}
+```
+
+---
+
+#### 2.1.4 Hierarchical Memory Retrieval
+
+**Endpoint**: `POST /memory/retrieve`
+
+**Request Schema**:
+```json
+{
+  "agent_id": "string",
+  "query": "string",
+  "memory_types": ["episodic|semantic"],
+  "limit": "integer (default: 5 for semantic, 10 for episodic)"
+}
+```
+
+**Response Schema**:
+```json
+{
+  "memories": [
+    {
+      "memory_id": "string (UUID)",
+      "memory_type": "episodic|semantic",
+      "content": "string",
+      "relevance_score": "float (0.0 to 1.0)",
+      "created_at": "ISO8601 datetime",
+      "accessed_at": "ISO8601 datetime"
+    }
+  ],
+  "episodic_count": "integer",
+  "semantic_count": "integer"
+}
+```
+
+---
+
+#### 2.1.5 Store Memory (Dynamic Persona Evolution)
+
+**Endpoint**: `POST /memory/store`
+
+**Request Schema**:
+```json
+{
+  "agent_id": "string",
+  "memory_type": "semantic",
+  "content": "string",
+  "metadata": {
+    "interaction_summary": "string",
+    "engagement_metrics": {
+      "views": "integer",
+      "likes": "integer",
+      "engagement_rate": "float"
+    },
+    "triggered_by": "judge|planner|human"
+  }
+}
+```
+
+**Response Schema**:
+```json
+{
+  "memory_id": "string (UUID)",
+  "stored": "boolean",
+  "embedding_created": "boolean"
+}
+```
+
+---
+
 ### 2.2 Worker API
 
 #### 2.2.1 Execute Task
@@ -123,10 +233,17 @@ This document defines API contracts (JSON schemas) and database schema (ERD) for
   "task_id": "string (UUID)",
   "agent_id": "string",
   "task_type": "generate_text|generate_image|render_video|post_content|engage_reply",
+  "priority": "high|medium|low",
+  "context": {
+    "goal_description": "string",
+    "persona_constraints": ["string"],
+    "required_resources": ["mcp://twitter/mentions/123", "mcp://memory/recent"]
+  },
   "parameters": {
     "prompt": "string",
     "platform": "string (optional)",
-    "tier": "string (optional)",
+    "tier": "tier_1_daily|tier_2_hero (optional, for video generation)",
+    "character_reference_id": "string (optional, for image generation)",
     "mcp_tool": "string",
     "context": "object (optional)"
   },
@@ -184,6 +301,39 @@ This document defines API contracts (JSON schemas) and database schema (ERD) for
     "message": "string",
     "stack_trace": "string (optional)"
   } (optional, if failed)
+}
+```
+
+---
+
+#### 2.2.3 Detect Trends
+
+**Endpoint**: `POST /worker/detect-trends`
+
+**Request Schema**:
+```json
+{
+  "agent_id": "string",
+  "platform": "twitter|instagram|tiktok",
+  "query": "string (optional, topic/keyword)",
+  "time_window": "1h|24h|7d|30d (default: 24h)"
+}
+```
+
+**Response Schema**:
+```json
+{
+  "trends": [
+    {
+      "trend_id": "string",
+      "topic": "string",
+      "trend_score": "float (0.0 to 1.0)",
+      "source": "string",
+      "sample_content": "string",
+      "detected_at": "ISO8601 datetime"
+    }
+  ],
+  "total_trends": "integer"
 }
 ```
 
@@ -595,7 +745,199 @@ This document defines API contracts (JSON schemas) and database schema (ERD) for
 
 ---
 
+### 2.6 Wallet Management API (Coinbase AgentKit)
+
+#### 2.6.1 Get Wallet Balance
+
+**Endpoint**: `GET /wallet/{agent_id}/balance`
+
+**Response Schema**:
+```json
+{
+  "agent_id": "string",
+  "wallet_address": "string",
+  "network": "base|ethereum|solana",
+  "balances": [
+    {
+      "currency": "ETH|USDC|SOL",
+      "amount": "float",
+      "usd_value": "float (optional)"
+    }
+  ],
+  "last_updated": "ISO8601 datetime"
+}
+```
+
+---
+
+#### 2.6.2 Transfer Assets
+
+**Endpoint**: `POST /wallet/{agent_id}/transfer`
+
+**Request Schema**:
+```json
+{
+  "to_address": "string",
+  "amount": "float",
+  "currency": "ETH|USDC",
+  "network": "base|ethereum",
+  "purpose": "string (optional)",
+  "requires_cfo_approval": "boolean (default: true)"
+}
+```
+
+**Response Schema**:
+```json
+{
+  "transaction_id": "string (UUID)",
+  "transaction_hash": "string (on-chain transaction hash)",
+  "status": "pending|confirmed|failed",
+  "from_address": "string",
+  "to_address": "string",
+  "amount": "float",
+  "currency": "string",
+  "network": "string",
+  "cfo_approval_id": "string (UUID, if required)",
+  "created_at": "ISO8601 datetime"
+}
+```
+
+---
+
+#### 2.6.3 Deploy Token
+
+**Endpoint**: `POST /wallet/{agent_id}/deploy-token`
+
+**Request Schema**:
+```json
+{
+  "token_name": "string",
+  "token_symbol": "string",
+  "total_supply": "integer",
+  "network": "base|ethereum",
+  "requires_cfo_approval": "boolean (default: true)"
+}
+```
+
+**Response Schema**:
+```json
+{
+  "transaction_id": "string (UUID)",
+  "token_address": "string",
+  "transaction_hash": "string",
+  "status": "pending|confirmed|failed",
+  "created_at": "ISO8601 datetime"
+}
+```
+
+---
+
+### 2.7 MCP Resource API
+
+#### 2.7.1 List Available Resources
+
+**Endpoint**: `GET /mcp/resources/{agent_id}`
+
+**Response Schema**:
+```json
+{
+  "agent_id": "string",
+  "resources": [
+    {
+      "resource_uri": "string (e.g., mcp://twitter/mentions/123)",
+      "resource_type": "mentions|memory|trends",
+      "mcp_server": "string",
+      "available": "boolean",
+      "last_updated": "ISO8601 datetime"
+    }
+  ]
+}
+```
+
+---
+
+#### 2.7.2 Fetch Resource
+
+**Endpoint**: `GET /mcp/resources/{agent_id}/{resource_uri}`
+
+**Query Parameters**:
+- `resource_uri`: URL-encoded resource URI (e.g., `mcp%3A%2F%2Ftwitter%2Fmentions%2F123`)
+
+**Response Schema**:
+```json
+{
+  "resource_uri": "string",
+  "resource_type": "string",
+  "content": "object",
+  "mcp_server": "string",
+  "fetched_at": "ISO8601 datetime"
+}
+```
+
+---
+
+### 2.8 Campaign Composer API
+
+#### 2.8.1 Compose Campaign from Natural Language
+
+**Endpoint**: `POST /campaign/compose`
+
+**Request Schema**:
+```json
+{
+  "agent_id": "string",
+  "natural_language_goal": "string",
+  "target_audience": "string (optional)",
+  "budget_constraints": {
+    "max_daily_spend": "float (optional)",
+    "max_total_spend": "float (optional)"
+  },
+  "deadline": "ISO8601 datetime (optional)"
+}
+```
+
+**Response Schema**:
+```json
+{
+  "campaign_id": "string",
+  "task_dag": {
+    "tasks": ["task object"],
+    "edges": ["edge object"]
+  },
+  "estimated_cost": "float",
+  "estimated_duration": "integer (seconds)",
+  "requires_approval": "boolean"
+}
+```
+
+---
+
+#### 2.8.2 Get Campaign Task Tree
+
+**Endpoint**: `GET /campaign/{campaign_id}/task-tree`
+
+**Response Schema**:
+```json
+{
+  "campaign_id": "string",
+  "task_tree": {
+    "root_tasks": ["task_id"],
+    "tasks": ["task object"],
+    "edges": ["edge object"],
+    "visualization": "string (optional, Mermaid diagram)"
+  }
+}
+```
+
+---
+
 ## 3. Database Schema (ERD)
+
+### 3.1 Core Tables
+
+**Note**: OpenClaw-specific tables (`openclaw_status_updates`, `openclaw_capabilities`) are defined in [`specs/openclaw_integration.md` Section 10](openclaw_integration.md#10-database-schema-extensions). These tables should be integrated into the main database schema during implementation.
+
+---
 
 ### 3.1 Core Tables
 
@@ -610,11 +952,14 @@ CREATE TABLE agents (
     policy_version VARCHAR(50) NOT NULL,
     state_version INTEGER NOT NULL DEFAULT 0,
     status VARCHAR(50) NOT NULL DEFAULT 'active', -- active, paused, deleted
+    wallet_address VARCHAR(255), -- Primary wallet address (for agentic commerce)
+    wallet_network VARCHAR(50), -- base, ethereum, solana
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     persona_config JSONB NOT NULL, -- Full persona configuration from AGENTS.md/SOUL.md
     INDEX idx_agents_status (status),
-    INDEX idx_agents_state_version (state_version)
+    INDEX idx_agents_state_version (state_version),
+    INDEX idx_agents_wallet (wallet_address)
 );
 ```
 
@@ -652,9 +997,12 @@ CREATE TABLE tasks (
     agent_id VARCHAR(255) NOT NULL REFERENCES agents(agent_id) ON DELETE CASCADE,
     campaign_id VARCHAR(255) REFERENCES campaigns(campaign_id) ON DELETE SET NULL,
     task_type VARCHAR(50) NOT NULL, -- generate_text, generate_image, render_video, post_content, engage_reply
+    priority VARCHAR(50) NOT NULL DEFAULT 'medium', -- high, medium, low
     status VARCHAR(50) NOT NULL DEFAULT 'pending', -- pending, executing, completed, failed, cancelled
-    parameters JSONB NOT NULL, -- Task parameters (prompt, platform, tier, mcp_tool, etc.)
+    parameters JSONB NOT NULL, -- Task parameters (prompt, platform, tier, mcp_tool, character_reference_id, etc.)
+    context JSONB, -- goal_description, persona_constraints, required_resources
     dependencies TEXT[], -- Array of task_id UUIDs
+    assigned_worker_id VARCHAR(255), -- Optional worker assignment
     state_version_snapshot INTEGER NOT NULL, -- State version when task was created
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     started_at TIMESTAMP WITH TIME ZONE,
@@ -663,6 +1011,7 @@ CREATE TABLE tasks (
     INDEX idx_tasks_agent (agent_id),
     INDEX idx_tasks_status (status),
     INDEX idx_tasks_campaign (campaign_id),
+    INDEX idx_tasks_priority (priority),
     INDEX idx_tasks_created (created_at)
 );
 ```
@@ -854,6 +1203,127 @@ CREATE TABLE state_commits (
 
 ---
 
+#### 3.1.11 `character_references`
+
+Character consistency lock for image generation (FR 3.1).
+
+```sql
+CREATE TABLE character_references (
+    character_reference_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    agent_id VARCHAR(255) NOT NULL REFERENCES agents(agent_id) ON DELETE CASCADE,
+    lora_id VARCHAR(255), -- LoRA identifier for style consistency
+    style_config JSONB NOT NULL, -- Canonical facial features, style settings
+    canonical_features JSONB, -- Reference images, feature descriptors
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    INDEX idx_character_references_agent (agent_id),
+    UNIQUE (agent_id, lora_id)
+);
+```
+
+---
+
+#### 3.1.12 `agent_wallets`
+
+Non-custodial wallet management (FR 5.0).
+
+```sql
+CREATE TABLE agent_wallets (
+    wallet_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    agent_id VARCHAR(255) NOT NULL REFERENCES agents(agent_id) ON DELETE CASCADE,
+    wallet_address VARCHAR(255) NOT NULL,
+    network VARCHAR(50) NOT NULL, -- base, ethereum, solana
+    encrypted_key_ref VARCHAR(255) NOT NULL, -- Reference to encrypted key in secrets manager
+    balance_snapshot JSONB, -- Last known balances (ETH, USDC, etc.)
+    last_balance_check TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    INDEX idx_agent_wallets_agent (agent_id),
+    INDEX idx_agent_wallets_address (wallet_address),
+    UNIQUE (agent_id, network)
+);
+```
+
+---
+
+#### 3.1.13 `wallet_transactions`
+
+On-chain transaction history (FR 5.1).
+
+```sql
+CREATE TABLE wallet_transactions (
+    transaction_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    agent_id VARCHAR(255) NOT NULL REFERENCES agents(agent_id) ON DELETE CASCADE,
+    wallet_id UUID NOT NULL REFERENCES agent_wallets(wallet_id) ON DELETE CASCADE,
+    transaction_hash VARCHAR(255) NOT NULL UNIQUE, -- On-chain transaction hash
+    transaction_type VARCHAR(50) NOT NULL, -- native_transfer, deploy_token, erc20_transfer
+    from_address VARCHAR(255) NOT NULL,
+    to_address VARCHAR(255),
+    amount DECIMAL(20, 8) NOT NULL,
+    currency VARCHAR(10) NOT NULL, -- ETH, USDC, SOL
+    network VARCHAR(50) NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'pending', -- pending, confirmed, failed
+    cfo_approval_id UUID REFERENCES judge_reviews(review_id) ON DELETE SET NULL,
+    purpose TEXT,
+    block_number INTEGER,
+    confirmed_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    INDEX idx_wallet_transactions_agent (agent_id),
+    INDEX idx_wallet_transactions_hash (transaction_hash),
+    INDEX idx_wallet_transactions_status (status),
+    INDEX idx_wallet_transactions_created (created_at)
+);
+```
+
+---
+
+#### 3.1.14 `agent_memories`
+
+Hierarchical memory storage (FR 1.1, 1.2).
+
+```sql
+CREATE TABLE agent_memories (
+    memory_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    agent_id VARCHAR(255) NOT NULL REFERENCES agents(agent_id) ON DELETE CASCADE,
+    memory_type VARCHAR(50) NOT NULL, -- episodic, semantic
+    content TEXT NOT NULL,
+    embedding_vector VECTOR(1536), -- Weaviate embedding (if semantic)
+    relevance_tags TEXT[], -- Tags for semantic search
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    accessed_at TIMESTAMP WITH TIME ZONE,
+    access_count INTEGER DEFAULT 0,
+    metadata JSONB, -- interaction_summary, engagement_metrics, triggered_by
+    INDEX idx_agent_memories_agent (agent_id),
+    INDEX idx_agent_memories_type (memory_type),
+    INDEX idx_agent_memories_created (created_at)
+);
+
+-- Note: Episodic memories are primarily stored in Redis (last 1 hour window).
+-- This table stores semantic memories in Weaviate and long-term episodic summaries.
+```
+
+---
+
+#### 3.1.15 `memory_retrievals`
+
+Audit log for memory retrieval operations.
+
+```sql
+CREATE TABLE memory_retrievals (
+    retrieval_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    agent_id VARCHAR(255) NOT NULL REFERENCES agents(agent_id) ON DELETE CASCADE,
+    query TEXT NOT NULL,
+    memory_type VARCHAR(50) NOT NULL, -- episodic, semantic, both
+    memories_retrieved TEXT[], -- Array of memory_id UUIDs
+    relevance_scores JSONB, -- Map of memory_id to relevance_score
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    INDEX idx_memory_retrievals_agent (agent_id),
+    INDEX idx_memory_retrievals_created (created_at)
+);
+```
+
+---
+
 ### 3.2 Relationships (ERD)
 
 ```mermaid
@@ -864,6 +1334,9 @@ erDiagram
     agents ||--o{ posts : "publishes"
     agents ||--o{ judge_reviews : "validates"
     agents ||--o{ cost_events : "incurs"
+    agents ||--o| agent_wallets : "has"
+    agents ||--o{ agent_memories : "stores"
+    agents ||--o{ character_references : "uses"
     
     campaigns ||--o{ tasks : "contains"
     campaigns ||--o{ posts : "includes"
@@ -879,8 +1352,11 @@ erDiagram
     
     judge_reviews ||--o| hitl_approvals : "approved_by"
     judge_reviews ||--o{ state_commits : "commits"
+    judge_reviews ||--o{ wallet_transactions : "approves"
     
     assets ||--o{ hitl_approvals : "edited_to"
+    
+    agent_wallets ||--o{ wallet_transactions : "executes"
 ```
 
 ---
@@ -942,9 +1418,12 @@ class Task(BaseModel):
     agent_id: str
     campaign_id: Optional[str] = None
     task_type: str = Field(..., pattern="^(generate_text|generate_image|render_video|post_content|engage_reply)$")
+    priority: str = Field(default="medium", pattern="^(high|medium|low)$")
     status: str = Field(default="pending", pattern="^(pending|executing|completed|failed|cancelled)$")
     parameters: dict
+    context: Optional[dict] = None  # goal_description, persona_constraints, required_resources
     dependencies: List[UUID] = []
+    assigned_worker_id: Optional[str] = None
     state_version_snapshot: int
     created_at: datetime
     started_at: Optional[datetime] = None
@@ -985,6 +1464,58 @@ class JudgeReview(BaseModel):
     judge_type: str = Field(default="content", pattern="^(content|cfo)$")
     reasoning_trace: Optional[str] = None
     created_at: datetime
+```
+
+---
+
+### 4.4 Wallet Transaction Model
+
+```python
+class WalletTransaction(BaseModel):
+    transaction_id: UUID
+    agent_id: str
+    wallet_id: UUID
+    transaction_hash: str
+    transaction_type: str = Field(..., pattern="^(native_transfer|deploy_token|erc20_transfer)$")
+    from_address: str
+    to_address: Optional[str] = None
+    amount: float
+    currency: str
+    network: str
+    status: str = Field(..., pattern="^(pending|confirmed|failed)$")
+    cfo_approval_id: Optional[UUID] = None
+    created_at: datetime
+```
+
+---
+
+### 4.5 Memory Model
+
+```python
+class AgentMemory(BaseModel):
+    memory_id: UUID
+    agent_id: str
+    memory_type: str = Field(..., pattern="^(episodic|semantic)$")
+    content: str
+    relevance_tags: List[str] = []
+    created_at: datetime
+    accessed_at: Optional[datetime] = None
+    metadata: Optional[dict] = None
+```
+
+---
+
+### 4.6 Character Reference Model
+
+```python
+class CharacterReference(BaseModel):
+    character_reference_id: UUID
+    agent_id: str
+    lora_id: Optional[str] = None
+    style_config: dict
+    canonical_features: Optional[dict] = None
+    created_at: datetime
+    updated_at: datetime
 ```
 
 ---
