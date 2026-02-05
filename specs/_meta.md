@@ -26,6 +26,8 @@ Unlike consumer-grade AI assistants, Chimera enforces enterprise-level governanc
 
 Chimera operates as a **fractal orchestration system**:
 
+**Fractal Orchestration** means a single human Super-Orchestrator manages a tier of AI "Manager Agents" (Planners/Judges), who in turn direct specialized "Worker Swarms." This hierarchical delegation allows a solopreneur or small team to operate thousands of agents without cognitive overload.
+
 - **Hub (Central Orchestrator)**: Control plane managing global state, policy distribution, dashboards, and multi-tenancy
 - **Spokes (Agent Runtimes)**: Individual agents with internal hierarchical swarms, operating autonomously at the edge
 
@@ -37,6 +39,7 @@ Each agent is not monolithic but dynamically instantiated as a **Planner–Worke
 
 - **Planner**: Owns goal decomposition, task DAG creation, and dynamic replanning
 - **Worker Pool**: Stateless, ephemeral executors that run atomic tasks in parallel
+  - **Worker Isolation**: Workers operate in a "shared-nothing" architecture—they do not communicate with each other. This prevents cascading failures and simplifies horizontal scaling. If 50 comments need replies, the Planner spawns 50 Workers in parallel, each operating independently.
 - **Judge**: Enforces quality, policy compliance, safety constraints, OCC commit control, and HITL routing
 
 This pattern optimizes for:
@@ -44,6 +47,12 @@ This pattern optimizes for:
 - **Governance**: Mandatory quality and policy gates
 - **Correctness**: Optimistic Concurrency Control (OCC) prevents ghost updates
 - **Failure Isolation**: Worker failures don't cascade
+
+#### 2.2.1 Worker Execution Semantics
+
+- **Atomic Tasks**: Workers execute single, atomic tasks with no inter-worker communication
+- **Idempotency**: Workers must be idempotent (safe to retry) because OCC failures and retries are expected at scale. Workers should check if a task has already been completed before executing.
+- **Stateless Design**: Workers are ephemeral and stateless; they pull tasks, execute, and push results without maintaining internal state between tasks.
 
 ### 2.3 MCP-Only External Interface
 
@@ -79,7 +88,13 @@ Humans approve **effects** (publishing actions, paid actions, financial transact
 
 ### 3.2 Optimistic Concurrency Control (OCC)
 
-**Constraint**: Every state commit must include `input_state_version` and `output_state_version` checks.
+**Constraint**: Every state commit must include:
+- `task_id`, `agent_id`
+- `input_state_version` (state version when task was created)
+- `output_state_version` (next state version after commit)
+- `commit_hash` (SHA-256 hash of artifact + metadata)
+
+If the `GlobalState.state_version` has advanced since the Worker started, the Judge **rejects the commit** and requeues the task for the Planner to re-evaluate against the new state. This prevents "ghost updates" where agents act on obsolete information.
 
 **Rationale**: With thousands of parallel workers, race conditions and "ghost updates" are inevitable without explicit versioning. OCC ensures state consistency at scale.
 
@@ -118,6 +133,14 @@ Humans approve **effects** (publishing actions, paid actions, financial transact
 **Rationale**: Compliance, debugging, and future policy refinement require complete audit trails.
 
 **Enforcement**: Database schema must support immutable audit logs.
+
+### 3.6 Shared Schema Validation
+
+**Constraint**: Define shared schemas for Task/Result/Review items with strict validation (e.g., Pydantic) to reduce ambiguity for agents and services.
+
+**Rationale**: Standardized schemas ensure consistency across Planner/Worker/Judge interactions and reduce integration errors.
+
+**Enforcement**: All Task, Result, and Review payloads must conform to validated Pydantic models before being enqueued or processed.
 
 ---
 
@@ -211,6 +234,17 @@ This separation allows specialized validation logic and independent scaling.
 ### 8.1 Core Services
 
 - **PostgreSQL**: Transactional metadata, lineage, governance, publishing state
+  
+  **PostgreSQL Optimization Patterns** (for high-velocity metadata):
+  - **Partitioning by time**: Daily/weekly partitions for high-write tables (e.g., `engagement_metrics`, `cost_events`)
+  - **Append-only event tables**: For ingestion; materialize views or summary tables for dashboards
+  - **Bulk ingest**: Use batched inserts / COPY, not row-by-row RPC style
+  - **Indexes with intent**: Composite indexes for `(agent_id, created_at)`, partial indexes for `status IN ('pending','review','failed')`
+  - **JSONB for tool payload snapshots**: While keeping key query fields normalized (platform, tool_name, tier, etc.)
+  - **Read scaling**: Via read replicas for analytics; writes remain on primary
+  - **Storage split**: PostgreSQL stores metadata, lineage, governance, and publishing state; Object Storage (S3/GCS) stores media blobs (renders, thumbnails, intermediates)
+  - **Optional future enhancement**: If event throughput becomes extreme, add a stream (Kafka/Redpanda) as an ingestion buffer—*but still land canonical metadata in Postgres*
+
 - **Redis**: Episodic cache, task queues (task_queue, review_queue, hitl_queue)
 - **Weaviate**: Vector memory / RAG for long-term agent memory
 - **Object Storage (S3/GCS)**: Media blobs (renders, thumbnails, intermediates)
