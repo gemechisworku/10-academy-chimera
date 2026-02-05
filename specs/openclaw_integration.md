@@ -104,7 +104,8 @@ Chimera agents publish the following information to OpenClaw:
         "post_id": "string",
         "platform": "string",
         "content_preview": "string",
-        "published_at": "ISO8601 datetime"
+        "published_at": "ISO8601 datetime",
+        "disclosure_level": "automated|assisted|none"
       }
     ],
     "engagement_stats": {
@@ -132,6 +133,27 @@ Chimera agents publish the following information to OpenClaw:
   "updated_at": "ISO8601 datetime"
 }
 ```
+
+#### 4.1.5 Status Update Metadata
+
+Every status update payload must include metadata required for Judge validation:
+
+```json
+{
+  "agent_id": "string",
+  "status_update_id": "UUID",
+  "confidence_score": "float (0.0 to 1.0)",
+  "risk_tags": ["string"],
+  "disclosure_level": "automated|assisted|none (optional, if status includes content previews)",
+  "input_state_version": "integer",
+  "created_at": "ISO8601 datetime"
+}
+```
+
+- **confidence_score**: Worker's confidence in the accuracy and safety of the status update (0.0 to 1.0)
+- **risk_tags**: Array of risk categories if status contains sensitive content (e.g., `["sensitive_activity", "financial"]`)
+- **disclosure_level**: Required if status includes content previews from recent posts (automated/assisted/none)
+- **input_state_version**: State version when status update task was created (for OCC)
 
 ---
 
@@ -167,7 +189,40 @@ Status updates are published in the following scenarios:
 
 ### 4.3 How to Publish
 
-#### 4.3.1 MCP Server Integration
+#### 4.3.1 Status Update Workflow (Planner → Worker → Judge)
+
+Status publishing follows the standard **Planner-Worker-Judge** workflow:
+
+1. **Planner** creates status update task:
+   - Reads current agent state with `state_version` snapshot
+   - Creates task with type `publish_openclaw_status`
+   - Includes `input_state_version` in task metadata
+   - Enqueues task to `task_queue`
+
+2. **Worker** generates status update:
+   - Receives task from `task_queue`
+   - Assembles status payload (availability, capabilities, activity, trust signals)
+   - Generates `confidence_score` (0.0 to 1.0) for the status update
+   - Generates `risk_tags` (e.g., `["sensitive_activity"]`) if activity previews contain sensitive content
+   - Includes `disclosure_level` if status includes content previews
+   - Pushes result to `review_queue` with full metadata
+
+3. **Judge** validates and routes:
+   - Validates status payload (Content Judge: policy compliance, sensitive info check)
+   - Validates cost implications (CFO Judge: rate limits, budget constraints)
+   - Performs OCC check: validates `input_state_version` matches current `GlobalState.state_version`
+   - Routes based on confidence_score and risk_tags:
+     - `confidence_score > 0.90` AND `not_sensitive` → Auto-publish
+     - `0.70 <= confidence_score <= 0.90` OR `sensitive` → HITL queue
+     - `confidence_score < 0.70` OR `policy_fail` → Reject and requeue for Planner
+   - If OCC check fails (state_version advanced), rejects commit and requeues task
+
+4. **Worker** (if auto-approved or HITL-approved) publishes:
+   - Calls MCP tool `openclaw_publish_status` with validated payload
+   - Includes `commit_hash` (SHA-256 of status payload + metadata)
+   - Records `output_state_version` after successful publication
+
+#### 4.3.2 MCP Server Integration
 
 All OpenClaw interactions route through **mcp-server-openclaw**:
 
@@ -186,7 +241,7 @@ All OpenClaw interactions route through **mcp-server-openclaw**:
 }
 ```
 
-#### 4.3.2 Judge Validation
+#### 4.3.3 Judge Validation
 
 Before publishing status to OpenClaw:
 
@@ -194,17 +249,26 @@ Before publishing status to OpenClaw:
    - No sensitive information exposed (API keys, internal IDs)
    - Policy-compliant content in activity previews
    - Trust signals are accurate and not misleading
+   - Analyzes activity previews for sensitive topics and generates `risk_tags` if detected
 
 2. **CFO Judge** validates cost implications:
    - Publishing frequency doesn't exceed rate limits (cost control)
    - Capability exposure doesn't violate budget constraints
 
-3. **Routing decision**:
-   - High confidence → Auto-publish
-   - Medium confidence → HITL review (optional, for sensitive status updates)
-   - Low confidence → Reject and log error
+3. **OCC Validation**:
+   - Judge reads `input_state_version` from task metadata
+   - Judge checks current `GlobalState.state_version`
+   - If `state_version` has advanced, Judge rejects commit and requeues task for Planner
+   - If `state_version` matches, Judge proceeds with routing decision
 
-#### 4.3.3 Idempotency
+4. **Routing decision** (based on confidence_score and risk_tags):
+   - `confidence_score > 0.90` AND `not_sensitive` (no risk_tags) → **Auto-publish**
+   - `0.70 <= confidence_score <= 0.90` OR `sensitive` (has risk_tags) → **HITL queue** (mandatory, not optional)
+   - `confidence_score < 0.70` OR `policy_fail` → **Reject and requeue** for Planner with feedback
+
+**Note**: HITL routing for status updates follows the same rules as content publishing. There is no "optional" HITL for status updates—if confidence is medium or content is sensitive, HITL is mandatory.
+
+#### 4.3.4 Idempotency
 
 Status updates are **idempotent**:
 
@@ -332,7 +396,9 @@ All OpenClaw interactions are subject to **same policy constraints** as human so
 
 - **Content policy**: OpenClaw posts must comply with AGENTS.md and brand guidelines
 - **Sensitive topics**: Sensitive content is routed to HITL (even for OpenClaw)
-- **Disclosure**: OpenClaw posts must include appropriate disclosure levels
+- **Disclosure**: OpenClaw posts must include appropriate disclosure levels (automated/assisted/none)
+- **Platform-native AI labeling**: When OpenClaw API supports AI labeling features, Workers must set appropriate flags (e.g., `is_generated`, `ai_label`) in status updates that include content previews
+- **Risk assessment**: Activity previews must be analyzed for sensitive topics; if detected, `risk_tags` must be included and content routed to HITL
 
 ---
 
@@ -439,6 +505,10 @@ Chimera agents **do not expose**:
 {
   "agent_id": "string",
   "status_update_id": "UUID",
+  "input_state_version": "integer",
+  "confidence_score": "float (0.0 to 1.0)",
+  "risk_tags": ["string"],
+  "disclosure_level": "automated|assisted|none (optional)",
   "availability": {
     "status": "active|idle|paused|error",
     "available": "boolean",
@@ -461,7 +531,8 @@ Chimera agents **do not expose**:
         "post_id": "string",
         "platform": "string",
         "content_preview": "string",
-        "published_at": "ISO8601 datetime"
+        "published_at": "ISO8601 datetime",
+        "disclosure_level": "automated|assisted|none"
       }
     ]
   },
@@ -479,7 +550,9 @@ Chimera agents **do not expose**:
   "published": "boolean",
   "status_update_id": "UUID",
   "openclaw_agent_id": "string (OpenClaw-assigned ID)",
-  "published_at": "ISO8601 datetime"
+  "published_at": "ISO8601 datetime",
+  "output_state_version": "integer",
+  "commit_hash": "string (SHA-256 of status payload + metadata)"
 }
 ```
 
@@ -548,6 +621,10 @@ Chimera agents **do not expose**:
 
 ## 10. Database Schema Extensions
 
+**Note**: These database schema extensions are part of the overall Project Chimera database schema. For the complete schema including core tables (`agents`, `campaigns`, `tasks`, `assets`, `posts`, etc.), see [`specs/technical.md` Section 3](technical.md#3-database-schema-erd).
+
+The OpenClaw-specific tables below extend the core schema and should be integrated into the main database schema in `technical.md` during implementation.
+
 ### 10.1 `openclaw_status_updates`
 
 Track status updates published to OpenClaw.
@@ -559,13 +636,20 @@ CREATE TABLE openclaw_status_updates (
     status_update_id UUID NOT NULL UNIQUE, -- Idempotency key
     openclaw_agent_id VARCHAR(255), -- OpenClaw-assigned agent ID
     status_payload JSONB NOT NULL, -- Full status payload
+    confidence_score DECIMAL(3, 2), -- 0.00 to 1.00
+    risk_tags TEXT[], -- Array of risk categories
+    disclosure_level VARCHAR(50), -- automated, assisted, none
+    input_state_version INTEGER NOT NULL, -- For OCC
+    output_state_version INTEGER, -- Set after successful publication
+    commit_hash VARCHAR(64), -- SHA-256 of status payload + metadata
     published BOOLEAN NOT NULL DEFAULT FALSE,
     published_at TIMESTAMP WITH TIME ZONE,
     error JSONB, -- Error details if publication failed
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     INDEX idx_openclaw_status_agent (agent_id),
     INDEX idx_openclaw_status_published (published),
-    INDEX idx_openclaw_status_created (created_at)
+    INDEX idx_openclaw_status_created (created_at),
+    INDEX idx_openclaw_status_state_version (input_state_version)
 );
 ```
 
@@ -594,9 +678,21 @@ CREATE TABLE openclaw_capabilities (
 
 ---
 
-## 11. Monitoring & Observability
+## 11. Functional Requirements
 
-### 11.1 Metrics
+The following functional user stories in [`specs/functional.md`](functional.md) support OpenClaw integration:
+
+- **W-013: Publish Status to OpenClaw** (Worker story for status publishing)
+- **J-008: Validate OpenClaw Status Updates** (Judge story with OCC validation)
+- **S-009: Manage OpenClaw Integration** (System Operator story for configuration)
+
+**Note**: These functional stories should be added to `functional.md` to fully capture OpenClaw integration requirements. The stories should align with the workflow described in Section 4.3.1 of this document.
+
+---
+
+## 12. Monitoring & Observability
+
+### 12.1 Metrics
 
 Track the following metrics:
 
@@ -605,8 +701,10 @@ Track the following metrics:
 - **Discovery queries**: Number of queries for Chimera agents
 - **Interaction requests**: Number of agent-to-agent interaction requests
 - **Cost per interaction**: Average cost of OpenClaw interactions
+- **OCC conflict rate**: % of status updates rejected due to state_version conflicts
+- **Confidence score distribution**: Average confidence_score for published vs. HITL-routed status updates
 
-### 11.2 Alerts
+### 12.2 Alerts
 
 Trigger alerts for:
 
@@ -614,24 +712,25 @@ Trigger alerts for:
 - Discovery query timeouts
 - Cost overruns (OpenClaw costs exceed budget)
 - Policy violations in OpenClaw content
+- High OCC conflict rate (> 10% of status updates rejected)
 
 ---
 
-## 12. Future Enhancements
+## 13. Future Enhancements
 
-### 12.1 Capability Marketplace
+### 13.1 Capability Marketplace
 
 - Allow Chimera agents to **sell capabilities** to other OpenClaw agents
 - Implement payment flows (on-chain transactions via CFO Judge)
 - Reputation system for capability providers
 
-### 12.2 Cross-Platform Sync
+### 13.2 Cross-Platform Sync
 
 - Sync OpenClaw status with human social platforms (Twitter, Instagram)
 - Unified engagement metrics across platforms
 - Cross-platform content discovery
 
-### 12.3 Advanced Trust Signals
+### 13.3 Advanced Trust Signals
 
 - **Reputation scores**: Calculated from interaction history
 - **Endorsements**: Other agents can endorse Chimera agents
