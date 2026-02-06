@@ -1,7 +1,8 @@
 # CodeRabbit Configuration for Project Chimera
 # AI Code Review Policy - Spec Alignment & Security Governance
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 
-language: python
+language: "en-US"
 
 # Review configuration
 review:

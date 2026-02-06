@@ -201,20 +201,6 @@ System administrators who monitor fleet health, manage policies, track costs, an
 
 ---
 
-### W-008: Character Consistency Lock for Image Generation
-**As a** Worker,  
-**I need to** include character reference ID or style LoRA identifier in all image generation requests,  
-**So that** the virtual influencer remains recognizable across thousands of posts.
-
-**Acceptance Criteria:**
-- Worker automatically includes `character_reference_id` or style LoRA identifier in image generation payload
-- Character reference ID retrieves canonical facial features and style settings for the specific agent
-- All image generation requests for an agent use the same character reference to maintain consistency
-- Character consistency is validated by Judge using Vision-capable model before publishing
-
-**Priority:** Must-have
-
----
 
 ### W-003: Video Rendering
 **As a** Worker,  
@@ -267,7 +253,20 @@ System administrators who monitor fleet health, manage policies, track costs, an
 **Priority:** Must-have
 
 ---
+### W-006: Idempotent Execution
+**As a** Worker,  
+**I need to** execute tasks idempotently (safe to retry),  
+**So that** OCC failures and retries don't cause duplicate effects.
 
+**Acceptance Criteria:**
+- Worker checks if task has already been completed (via task_id lookup)
+- Worker uses idempotency keys for external API calls (via MCP)
+- Worker can safely retry failed tasks without side effects
+- Duplicate task execution is prevented
+
+**Priority:** Must-have
+
+---
 ### W-007: Trend Detection
 **As a** Trend Spotter Worker,  
 **I need to** analyze aggregated data from News Resources over time intervals,  
@@ -279,6 +278,21 @@ System administrators who monitor fleet health, manage policies, track costs, an
 - Worker detects clusters of related topics using semantic analysis
 - When trend cluster emerges, Worker generates "Trend Alert" with topic summary and relevance score
 - Trend Alert is fed into Planner's context, prompting potential content creation opportunities
+
+**Priority:** Must-have
+
+---
+
+### W-008: Character Consistency Lock for Image Generation
+**As a** Worker,  
+**I need to** include character reference ID or style LoRA identifier in all image generation requests,  
+**So that** the virtual influencer remains recognizable across thousands of posts.
+
+**Acceptance Criteria:**
+- Worker automatically includes `character_reference_id` or style LoRA identifier in image generation payload
+- Character reference ID retrieves canonical facial features and style settings for the specific agent
+- All image generation requests for an agent use the same character reference to maintain consistency
+- Character consistency is validated by Judge using Vision-capable model before publishing
 
 **Priority:** Must-have
 
@@ -346,20 +360,6 @@ System administrators who monitor fleet health, manage policies, track costs, an
 
 ---
 
-### W-006: Idempotent Execution
-**As a** Worker,  
-**I need to** execute tasks idempotently (safe to retry),  
-**So that** OCC failures and retries don't cause duplicate effects.
-
-**Acceptance Criteria:**
-- Worker checks if task has already been completed (via task_id lookup)
-- Worker uses idempotency keys for external API calls (via MCP)
-- Worker can safely retry failed tasks without side effects
-- Duplicate task execution is prevented
-
-**Priority:** Must-have
-
----
 
 ## 5. Judge User Stories
 
