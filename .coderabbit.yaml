@@ -9,16 +9,13 @@ early_access: false
 reviews:
   # Review profile: "chill" (balanced), "default" (standard), or "strict" (thorough)
   profile: "strict"
-  
   # Request changes workflow - set to true to require approval before merge
   request_changes_workflow: true
   
   # High-level summary of changes
   high_level_summary: true
-  
   # Include poem in reviews (optional, can be disabled)
   poem: false
-  
   # Review status indicators
   review_status: true
   
