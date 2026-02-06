@@ -72,25 +72,38 @@ The Judge routes artifacts based on confidence scores and risk assessment:
 
 ## Project Status
 
-This repository contains the research and architecture documentation for Project Chimera, developed as part of a **3-Day Challenge** deliverable.
+This repository contains the research, architecture documentation, and initial implementation setup for Project Chimera.
 
 ### Current Deliverables
 
 - **Research Summary**: Consolidated SRS review and cross-reference analysis
 - **Architecture Strategy**: Core domain architecture decisions and technical specifications
-
-### Planned Deliverables
-
-- Technical specifications (Task/Result schemas, HITL queue contracts, ERD)
-- Functional specifications (user stories, workflows)
-- Implementation roadmap
+- **Technical Specifications**: Complete API contracts, database schemas, and Pydantic models (see `specs/technical.md`)
+- **Functional Specifications**: User stories and acceptance criteria (see `specs/functional.md`)
+- **Test-Driven Development Setup**: Failing tests that define implementation contracts
+- **Containerization**: Docker setup for consistent development environment
+- **Automation**: Makefile and PowerShell scripts for standardized workflows
 
 ---
 
 ## Documentation
 
+### Specifications
+
+- [`specs/_meta.md`](specs/_meta.md) — Core architectural principles and constraints
+- [`specs/technical.md`](specs/technical.md) — API contracts, database schemas, and Pydantic models
+- [`specs/functional.md`](specs/functional.md) — User stories and acceptance criteria
+- [`specs/openclaw_integration.md`](specs/openclaw_integration.md) — OpenClaw network integration patterns
+
+### Research
+
 - [`research/research_summary.md`](research/research_summary.md) — Consolidated SRS review, comparative analysis with OpenClaw/Moltbook, and architectural insights
 - [`research/architecture_strategy.md`](research/architecture_strategy.md) — Domain architecture decisions, swarm pattern rationale, HITL design, and data layer choices
+- [`research/project_chimera_srs_document.md`](research/project_chimera_srs_document.md) — Complete Software Requirements Specification
+
+### Skills
+
+- [`skills/README.md`](skills/README.md) — Skills interface definitions and execution patterns
 
 ---
 
@@ -115,12 +128,126 @@ Chimera supports three scalable business models:
 
 ## Technology Stack
 
-- **Runtime**: Python-based agent runtimes with MCP client integration
+- **Runtime**: Python 3.13+ with MCP client integration
+- **Package Management**: `uv` for fast dependency resolution
 - **Orchestration**: Central Orchestrator (control plane)
 - **Databases**: PostgreSQL (transactional), Weaviate (vector), Redis (queues/cache)
 - **Storage**: Object storage (S3/GCS) for media blobs
 - **Protocol**: Model Context Protocol (MCP) for all external interactions
 - **Blockchain**: On-chain ledger integration for agentic commerce
+- **Containerization**: Docker for consistent development environments
+- **Testing**: pytest with TDD workflow
+
+---
+
+## Development Setup
+
+### Prerequisites
+
+- **Python**: 3.13 or higher
+- **uv**: Python package manager (install from [https://github.com/astral-sh/uv](https://github.com/astral-sh/uv))
+- **Docker**: For containerized testing (optional but recommended)
+
+### Quick Start
+
+#### Option 1: Using PowerShell Script (Recommended for Windows)
+
+We provide a PowerShell script (`make.ps1`) that works on Windows without additional installations:
+
+```powershell
+# Install dependencies
+.\make.ps1 setup
+
+# Run tests in Docker
+.\make.ps1 test
+
+# Run spec-check to verify code alignment
+.\make.ps1 spec-check
+
+# Build Docker image
+.\make.ps1 docker-build
+
+# Clean build artifacts
+.\make.ps1 clean
+```
+
+#### Option 2: Using Make (Linux/macOS or Windows with WSL)
+
+If you have `make` installed:
+
+```bash
+# Install dependencies
+make setup
+
+# Run tests in Docker
+make test
+
+# Run spec-check
+make spec-check
+
+# Build Docker image
+make docker-build
+
+# Clean build artifacts
+make clean
+```
+
+#### Option 3: Manual Setup
+
+```bash
+# Install dependencies using uv
+uv pip install -e ".[dev]"
+
+# Run tests locally (requires dependencies installed)
+pytest tests/ -v
+
+# Run spec-check script
+./scripts/spec-check.sh  # Linux/macOS
+# or
+powershell -ExecutionPolicy Bypass -File scripts/spec-check.ps1  # Windows
+```
+
+### Test-Driven Development (TDD)
+
+The project follows a TDD approach. Currently, all tests are **expected to fail** because implementations don't exist yet. The tests define the contracts that implementations must satisfy:
+
+- **`tests/test_trend_fetcher.py`**: Validates trend detection API contract (Section 2.2.3 of `specs/technical.md`)
+- **`tests/test_skills_interface.py`**: Validates skills interface contracts (from `skills/README.md`)
+
+**Current Test Status**: 11 tests, all failing with `ModuleNotFoundError` (expected in TDD phase)
+
+### Docker Development
+
+The project includes a Dockerfile for consistent development environments:
+
+```bash
+# Build Docker image
+docker build -t chimera-dev:latest .
+
+# Run tests in container
+docker run --rm -v "$(PWD):/app" -w /app chimera-dev:latest pytest tests/ -v
+
+# Interactive shell in container
+docker run --rm -it -v "$(PWD):/app" -w /app chimera-dev:latest /bin/bash
+```
+
+Or use Docker Compose:
+
+```bash
+docker-compose up -d
+docker-compose exec chimera-dev /bin/bash
+```
+
+### Spec Check
+
+The `spec-check` command verifies that code aligns with specifications:
+
+- Checks specification files exist and are complete
+- Validates API contracts match `specs/technical.md`
+- Verifies skills interfaces match `skills/README.md`
+- Reports implementation status
+
+Run it with: `.\make.ps1 spec-check` or `make spec-check`
 
 ---
 

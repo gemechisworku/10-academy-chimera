@@ -1,0 +1,21 @@
+# Docker Compose for Project Chimera Development
+version: '3.8'
+
+services:
+  chimera-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: chimera-dev:latest
+    container_name: chimera-dev
+    volumes:
+      - .:/app
+      - /app/__pycache__
+    working_dir: /app
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+    command: /bin/bash
+    stdin_open: true
+    tty: true
+
