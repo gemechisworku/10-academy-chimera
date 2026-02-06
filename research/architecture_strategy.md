@@ -331,7 +331,11 @@ The Judge is the sole router of these artifacts into:
 - **Human-in-the-Loop:** Implement HITL as a **Judge‑routed Safety Layer** with confidence tiers + sensitive-topic overrides, surfaced through a dashboard **HITL queue** for Approve/Reject/Edit. ""  
 - **Database for high‑velocity video metadata:** Use **PostgreSQL (SQL) as the source of truth**, with partitioned append-only event tables, normalized lineage, JSONB payload snapshots, and object storage for blobs. This aligns with the SRS transactional persistence choice and supports governance/traceability. ""
 
-## 8. The highlevel architectural diagram
+## 8. High-Level Architectural Diagram
+
+### 8.1 Technical Architecture Diagram
+
+```mermaid
 flowchart TB
   %% Control Plane
   OP["Human Super-Orchestrator"] --> DASH["Orchestrator Dashboard / Mission Control"]
@@ -367,3 +371,18 @@ flowchart TB
   HOST --> IMG
   HOST --> VID
   HOST --> CB
+```
+
+### 8.2 Stakeholder-Friendly Diagrams
+
+For presentations to technical and non-technical stakeholders, see:
+
+- **[Stakeholder Architecture Diagram](stakeholder_architecture_diagram.md)** — Main system architecture with clear visualizations, key concepts, and system flow examples
+- **[OpenClaw Integration Diagram](openclaw_integration_diagram.md)** — OpenClaw network integration architecture with detailed workflows and governance
+
+These diagrams provide:
+- Clear visual representations suitable for both technical and non-technical audiences
+- Detailed explanations of key architectural concepts
+- System flow examples and use cases
+- Scale and performance metrics
+- Integration workflows and governance patterns
