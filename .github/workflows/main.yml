@@ -45,7 +45,7 @@ jobs:
         with:
           files: test-results.xml
           check_name: Test Results
-          comment_mode: create new
+          comment_mode: always
           report_individual_runs: true
 
   spec-check:
@@ -99,7 +99,7 @@ jobs:
       
       - name: Install dependencies
         run: |
-          uv pip install -e ".[dev]"
+          uv pip install --system -e ".[dev]"
       
       - name: Run linting (if tools are added later)
         run: |

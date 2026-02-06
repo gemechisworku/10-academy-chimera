@@ -2,7 +2,8 @@
 # Spec Check Script for Project Chimera
 # Verifies that code implementation aligns with specifications
 
-set -e
+# Don't exit on error - we want to collect all failures
+set +e
 
 # Colors for output
 RED='\033[0;31m'
@@ -64,28 +65,30 @@ echo ""
 echo "Checking API contract specifications..."
 
 # Check for Detect Trends API (Section 2.2.3)
-if grep -q "2.2.3 Detect Trends" specs/technical.md; then
+if grep -q "2.2.3 Detect Trends" specs/technical.md 2>/dev/null; then
     print_result 0 "Detect Trends API contract defined"
 else
+    echo "Debug: Searching for '2.2.3 Detect Trends' in specs/technical.md"
+    grep -i "detect trends" specs/technical.md | head -1 || echo "Debug: Pattern not found"
     print_result 1 "Detect Trends API contract missing"
 fi
 
 # Check for Worker API
-if grep -q "2.2 Worker API" specs/technical.md; then
+if grep -q "2.2 Worker API" specs/technical.md 2>/dev/null; then
     print_result 0 "Worker API section found"
 else
     print_result 1 "Worker API section missing"
 fi
 
 # Check for Planner API
-if grep -q "2.1 Planner API" specs/technical.md; then
+if grep -q "2.1 Planner API" specs/technical.md 2>/dev/null; then
     print_result 0 "Planner API section found"
 else
     print_result 1 "Planner API section missing"
 fi
 
 # Check for Judge API
-if grep -q "2.3 Judge API" specs/technical.md; then
+if grep -q "2.3 Judge API" specs/technical.md 2>/dev/null; then
     print_result 0 "Judge API section found"
 else
     print_result 1 "Judge API section missing"
