@@ -11,6 +11,10 @@ jobs:
   test:
     name: Run Tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
     
     steps:
       - name: Checkout code
@@ -47,6 +51,7 @@ jobs:
           check_name: Test Results
           comment_mode: always
           report_individual_runs: true
+          check_run: false  # Disable check runs if permissions are still an issue
 
   spec-check:
     name: Spec Alignment Check
