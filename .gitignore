@@ -48,3 +48,6 @@ Thumbs.db
 .coverage
 htmlcov/
 
+# Temporary documentation and planning files
+.docs-temp/
+

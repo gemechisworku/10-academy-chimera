@@ -2,6 +2,13 @@
 
 **An enterprise-grade, cloud-native platform for operating large fleets of persistent AI influencer agents with centralized governance.**
 
+[![CI/CD Pipeline](https://github.com/gemechisworku/10-academy-chimera/actions/workflows/main.yml/badge.svg)](https://github.com/gemechisworku/10-academy-chimera/actions/workflows/main.yml)
+[![CodeRabbit](https://img.shields.io/badge/CodeRabbit-AI%20Review-blue)](https://coderabbit.ai)
+[![Python](https://img.shields.io/badge/Python-3.13+-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/License-TBD-lightgrey.svg)](LICENSE)
+
+> **Note**: Replace `YOUR_USERNAME` in the CI/CD badge URL with your actual GitHub username/organization.
+
 ---
 
 ## Overview
@@ -248,6 +255,51 @@ The `spec-check` command verifies that code aligns with specifications:
 - Reports implementation status
 
 Run it with: `.\make.ps1 spec-check` or `make spec-check`
+
+---
+
+## CI/CD & AI Governance
+
+### Continuous Integration
+
+The project uses **GitHub Actions** for automated testing and validation on every push:
+
+- **Test Execution**: Runs all tests in Docker container (matches local environment)
+- **Spec Alignment Check**: Validates code matches specifications
+- **Code Quality**: Linting and code quality checks
+- **Artifact Upload**: Test results are uploaded as artifacts for analysis
+
+**Workflow**: `.github/workflows/main.yml`
+
+**Status**: Runs on all branches and pull requests. Test failures and spec-check failures block merges.
+
+### AI Code Review (CodeRabbit)
+
+**CodeRabbit** provides automated AI-powered code reviews on every pull request:
+
+- **Spec Alignment**: Ensures implementations match `specs/technical.md` and `skills/README.md`
+- **Security Checks**: Identifies vulnerabilities, hardcoded secrets, injection risks
+- **Architecture Compliance**: Validates MCP-only interface, swarm patterns, OCC implementation
+- **TDD Compliance**: Ensures tests exist and follow TDD patterns
+
+**Configuration**: `.coderabbit.yaml`
+
+**Status**: CodeRabbit reviews are **required** for all pull requests. Reviews must pass before merging.
+
+### Review Process
+
+1. **Create Pull Request** → CodeRabbit automatically reviews
+2. **GitHub Actions runs** → Tests and spec-check execute
+3. **Both must pass** → CodeRabbit approval + CI/CD success
+4. **Merge allowed** → When all checks pass
+
+### CI/CD Badges
+
+The badges at the top of this README show:
+- **CI/CD Pipeline**: Status of automated tests
+- **CodeRabbit**: AI review status
+- **Python**: Version requirement
+- **License**: Current license status
 
 ---
 

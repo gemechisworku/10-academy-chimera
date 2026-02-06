@@ -1,0 +1,162 @@
+# CodeRabbit Configuration for Project Chimera
+# AI Code Review Policy - Spec Alignment & Security Governance
+
+language: python
+
+# Review configuration
+review:
+  # Spec Alignment Checks
+  spec_alignment:
+    enabled: true
+    spec_directories:
+      - "specs/"
+      - "skills/README.md"
+    check_api_contracts: true
+    check_skills_interfaces: true
+    check_database_schemas: true
+    check_pydantic_models: true
+  
+  # Security Vulnerability Checks
+  security:
+    enabled: true
+    check_dependencies: true
+    check_secrets: true
+    check_injection_risks: true
+    check_auth_patterns: true
+    check_hardcoded_credentials: true
+    check_unsafe_functions: true
+  
+  # Architecture Compliance
+  architecture:
+    enabled: true
+    check_mcp_only: true
+    check_swarm_pattern: true
+    check_occ_implementation: true
+    check_stateless_workers: true
+    check_hub_spoke_topology: true
+  
+  # TDD Compliance
+  tdd:
+    enabled: true
+    require_tests: true
+    check_test_coverage: true
+    check_tdd_patterns: true
+
+# Paths to check
+paths:
+  include:
+    - "worker/**"
+    - "skills/**"
+    - "chimera/**"
+    - "tests/**"
+  exclude:
+    - "**/__pycache__/**"
+    - "**/*.pyc"
+    - "**/node_modules/**"
+    - ".git/**"
+
+# Review behavior
+behavior:
+  # Require CodeRabbit approval before merge
+  blocking: true
+  
+  # Review all files, not just changed ones
+  review_all_files: false
+  
+  # Post comments on PR
+  post_review_comments: true
+  
+  # Provide suggestions
+  provide_suggestions: true
+  
+  # Request changes for critical issues
+  request_changes_on_critical: true
+
+# Custom rules for Project Chimera
+rules:
+  # Spec Alignment Rules
+  - name: "API Contract Compliance"
+    description: "Ensure API implementations match specs/technical.md"
+    severity: error
+    check: |
+      When implementing APIs (worker endpoints, skills), verify:
+      1. Request/response structures match specs/technical.md
+      2. Field names and types are correct
+      3. Required fields are present
+      4. Optional fields are handled correctly
+  
+  - name: "Skills Interface Compliance"
+    description: "Ensure skills match interfaces in skills/README.md"
+    severity: error
+    check: |
+      When implementing skills, verify:
+      1. Input models match TranscribeAudioInput, DownloadYouTubeInput, etc.
+      2. Output models match Worker Result schema
+      3. Function signatures accept mcp_client parameter
+      4. Idempotency checks are implemented
+  
+  # Security Rules
+  - name: "No Hardcoded Secrets"
+    description: "Never hardcode API keys, passwords, or tokens"
+    severity: critical
+    check: |
+      Look for patterns like:
+      - API_KEY = "xxx"
+      - password = "xxx"
+      - token = "xxx"
+      - Use environment variables or secrets management instead
+  
+  - name: "CFO Judge Approval Required"
+    description: "All financial transactions must go through CFO Judge"
+    severity: critical
+    check: |
+      When implementing transaction code, verify:
+      1. CFO Judge validation is called
+      2. Budget checks are performed
+      3. Transaction approval is obtained before execution
+      Reference: specs/_meta.md Section 10.3
+  
+  - name: "MCP-Only External Interface"
+    description: "All external calls must use MCP, no direct API calls"
+    severity: error
+    check: |
+      When making external API calls, verify:
+      1. Using MCP servers (mcp-server-*)
+      2. No direct HTTP requests to external APIs
+      3. All external interactions route through MCP
+      Reference: specs/_meta.md Section 2.2
+  
+  # Architecture Rules
+  - name: "OCC Implementation"
+    description: "State updates must use Optimistic Concurrency Control"
+    severity: error
+    check: |
+      When updating state, verify:
+      1. State version is checked (input_state_version)
+      2. OCC conflict detection is implemented
+      3. State commits are atomic
+      Reference: specs/_meta.md Section 3.3
+  
+  - name: "Stateless Workers"
+    description: "Workers must be stateless and ephemeral"
+    severity: error
+    check: |
+      Worker implementations should:
+      1. Not store state between executions
+      2. Not communicate with other workers
+      3. Be safe to scale horizontally
+      Reference: specs/_meta.md Section 2.2
+
+# Review comments style
+comments:
+  style: "polite"
+  include_code_suggestions: true
+  include_references: true
+  reference_specs: true
+
+# Summary report
+summary:
+  enabled: true
+  include_statistics: true
+  group_by_severity: true
+
