@@ -7,8 +7,6 @@
 [![Python](https://img.shields.io/badge/Python-3.13+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/License-TBD-lightgrey.svg)](LICENSE)
 
-> **Note**: Replace `YOUR_USERNAME` in the CI/CD badge URL with your actual GitHub username/organization.
-
 ---
 
 ## Overview
