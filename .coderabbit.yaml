@@ -7,8 +7,8 @@ early_access: false
 
 # Review configuration
 reviews:
-  # Review profile: "chill" (balanced), "default" (standard), or "strict" (thorough)
-  profile: "strict"
+  # Review profile: "chill" (lighter feedback) or "assertive" (more thorough feedback)
+  profile: "assertive"
   # Request changes workflow - set to true to require approval before merge
   request_changes_workflow: true
   
