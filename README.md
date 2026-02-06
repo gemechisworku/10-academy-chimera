@@ -88,6 +88,83 @@ This repository contains the research, architecture documentation, and initial i
 - **Test-Driven Development Setup**: Failing tests that define implementation contracts
 - **Containerization**: Docker setup for consistent development environment
 - **Automation**: Makefile and PowerShell scripts for standardized workflows
+- **Implementation Structure**: Backend and frontend folder structures ready for development
+
+---
+
+## Project Structure
+
+```
+10-academy-chimera/
+├── backend/                    # Backend implementation
+│   ├── services/               # Core business logic services
+│   │   ├── planner/           # Goal decomposition, task DAG creation
+│   │   ├── worker/            # Stateless task executors
+│   │   ├── judge/             # Quality validation, policy enforcement
+│   │   ├── globalstate/       # Versioned state management (OCC)
+│   │   ├── dashboard/         # Dashboard API endpoints
+│   │   ├── wallet/            # Non-custodial wallet management
+│   │   ├── campaign/          # Campaign composition and management
+│   │   ├── memory/            # Hierarchical memory retrieval
+│   │   └── orchestrator/     # Central orchestrator
+│   ├── api/                   # REST API layer
+│   │   ├── routes/            # API route handlers
+│   │   └── middleware/        # Authentication, rate limiting, error handling
+│   ├── database/              # Data persistence layer
+│   │   ├── models/            # Pydantic models and ORM models
+│   │   ├── migrations/        # Database migration scripts
+│   │   └── repositories/     # Data access layer
+│   ├── mcp/                   # Model Context Protocol integration
+│   │   ├── clients/           # MCP client implementations
+│   │   └── integration/       # MCP server integration
+│   ├── core/                  # Core utilities and configuration
+│   │   ├── config/            # Application configuration
+│   │   ├── exceptions/        # Custom exception classes
+│   │   └── utils/             # Shared utility functions
+│   ├── storage/               # Object storage integration
+│   │   └── object_storage/    # S3/GCS handlers
+│   └── queues/                # Queue management (Redis)
+├── frontend/                   # Frontend implementation
+│   ├── pages/                 # Main application pages
+│   │   ├── dashboard/         # Main dashboard
+│   │   ├── hitl-queue/        # HITL review queue interface
+│   │   ├── fleet-status/      # Fleet monitoring dashboard
+│   │   ├── cost-metrics/      # Cost tracking interface
+│   │   ├── policy-management/  # Policy editor
+│   │   └── campaign-composer/ # Campaign creation interface
+│   ├── components/            # Reusable UI components
+│   │   ├── common/            # Shared components
+│   │   ├── hitl/             # HITL-specific components
+│   │   ├── fleet/            # Fleet monitoring components
+│   │   └── campaign/         # Campaign management components
+│   ├── services/              # API and external service clients
+│   │   ├── api/               # REST API client
+│   │   └── mcp/               # MCP client integration
+│   ├── state/                 # State management
+│   │   └── stores/            # State stores
+│   ├── utils/                 # Frontend utilities
+│   └── assets/                # Static assets
+├── specs/                      # Specifications (definitive requirements)
+│   ├── _meta.md               # Core architectural principles
+│   ├── technical.md           # API contracts, database schemas
+│   ├── functional.md          # User stories, acceptance criteria
+│   └── openclaw_integration.md # OpenClaw network integration
+├── research/                   # Research and architecture documentation
+│   ├── project_chimera_srs_document.md # Complete SRS
+│   ├── architecture_strategy.md        # Domain architecture decisions
+│   └── research_summary.md             # Consolidated SRS review
+├── skills/                     # Skills interface definitions
+├── tests/                      # Test suite (TDD approach)
+├── scripts/                    # Automation scripts
+└── README.md                   # This file
+```
+
+### Implementation Directories
+
+- **`backend/`**: Contains all backend services, APIs, database models, and MCP integration. See [`backend/README.md`](backend/README.md) for detailed structure.
+- **`frontend/`**: Contains dashboard UI, HITL interfaces, and frontend components. See [`frontend/README.md`](frontend/README.md) for detailed structure.
+- **`specs/`**: Definitive specifications that all implementations must follow. **Always review specs before implementing features.**
+- **`research/`**: Research documents, SRS, and architectural strategy documents.
 
 ---
 
