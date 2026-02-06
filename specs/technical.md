@@ -1403,6 +1403,207 @@ erDiagram
 
 ---
 
+### 3.6 Database Choice & Architecture
+
+**Primary Database: PostgreSQL 15+**
+
+PostgreSQL is selected as the primary database for Project Chimera due to:
+
+- **ACID compliance**: Required for OCC (Optimistic Concurrency Control) and transactional integrity
+- **JSONB support**: Flexible schema for task parameters, metadata, lineage, and persona configs
+- **Partitioning**: Native support for time-based partitioning of high-velocity tables
+- **Full-text search**: Built-in support for semantic search and content indexing
+- **Extensibility**: Support for vector extensions (pgvector) for future semantic memory integration
+- **Mature ecosystem**: Proven at scale for enterprise applications
+
+**Secondary Data Stores:**
+
+- **Redis**: Episodic memory cache (last 1 hour window), task queues, rate limiting
+- **Weaviate**: Semantic memory storage (vector database for long-term agent memories)
+- **Object Storage (S3/GCS)**: Media blobs (images, videos) with CDN distribution
+- **On-chain Ledger (Base/Ethereum)**: Immutable transaction history
+
+---
+
+### 3.7 Data Lifecycle Management
+
+#### 3.7.1 Data Ingestion
+
+**Pattern**: Event-driven ingestion with queue-based processing
+
+1. **Task Creation** (Planner → Database):
+   - Planner creates tasks via `POST /planner/decompose`
+   - Tasks inserted into `tasks` table with `state_version_snapshot`
+   - Tasks enqueued to Redis `task_queue` for Worker consumption
+
+2. **Worker Results** (Worker → Database):
+   - Workers execute tasks and push results to `review_queue` (Redis)
+   - Judge consumes from `review_queue` and validates
+   - Validated results committed to `assets` table via `POST /judge/commit` (OCC)
+
+3. **Post Publication** (Worker → Database):
+   - Published posts inserted into `posts` table
+   - Engagement metrics ingested via platform APIs (periodic polling or webhooks)
+   - Metrics inserted into `engagement_metrics` (partitioned table)
+
+4. **Cost Events** (Worker → Database):
+   - Cost events logged immediately after MCP tool execution
+   - Inserted into `cost_events` (partitioned table) with atomic Redis budget updates
+
+5. **Memory Storage** (Judge → Weaviate):
+   - Semantic memories stored via `POST /memory/store`
+   - Episodic memories cached in Redis (TTL: 1 hour)
+   - Long-term episodic summaries written to `agent_memories` table
+
+**Ingestion Rate Handling:**
+- **High-velocity tables** (`engagement_metrics`, `cost_events`): Use partitioned tables with monthly partitions
+- **Bulk inserts**: Use `COPY` command for batch ingestion of engagement metrics
+- **Queue buffering**: Redis queues prevent database overload during spikes
+
+---
+
+#### 3.7.2 Data Transformation
+
+**ETL Patterns:**
+
+1. **Task DAG Transformation**:
+   - Planner decomposes goals into task DAG
+   - DAG stored as JSONB in `tasks` table with dependency edges
+   - Workers consume tasks and transform into artifacts
+
+2. **Asset Lineage Transformation**:
+   - Worker results transformed into `assets` with full lineage (parent assets, prompt history, edit chain)
+   - Lineage stored as JSONB for query flexibility
+
+3. **Engagement Metrics Aggregation**:
+   - Raw metrics from platforms aggregated into `engagement_metrics`
+   - Delta calculations (`engagement_delta`) computed during ingestion
+   - Real-time aggregation via materialized views for dashboard queries
+
+4. **Memory Embedding Transformation**:
+   - Semantic memories transformed into vector embeddings (1536 dimensions) via Weaviate
+   - Embeddings stored in `agent_memories.embedding_vector` for similarity search
+
+5. **Cost Aggregation**:
+   - Individual cost events aggregated by agent, campaign, category
+   - Real-time budget calculations via Redis counters
+   - Historical cost trends computed via materialized views
+
+---
+
+#### 3.7.3 Data Storage Strategy
+
+**Storage Tiers:**
+
+1. **Hot Storage (PostgreSQL)**:
+   - Active data (last 90 days)
+   - All transactional data (tasks, assets, posts, reviews)
+   - Current agent state, campaigns, wallets
+
+2. **Warm Storage (PostgreSQL Partitions)**:
+   - Partitioned tables for high-velocity data
+   - Monthly partitions for `engagement_metrics` and `cost_events`
+   - Partitions older than 90 days marked for archival
+
+3. **Cold Storage (S3/GCS)**:
+   - Archived data (older than 90 days)
+   - Media blobs (images, videos) with lifecycle policies
+   - Immutable audit logs (compressed and archived)
+
+4. **Cache Layer (Redis)**:
+   - Episodic memory (TTL: 1 hour)
+   - Task queues (`task_queue`, `review_queue`, `hitl_queue`)
+   - Budget counters (`daily_spend`, `campaign_budget_remaining`)
+
+5. **Vector Storage (Weaviate)**:
+   - Semantic memories with embeddings
+   - Persona definitions and world knowledge
+   - Long-term agent biography
+
+**Storage Optimization:**
+- **JSONB compression**: PostgreSQL automatically compresses JSONB columns
+- **Partition pruning**: Queries automatically exclude irrelevant partitions
+- **Index-only scans**: Composite indexes enable index-only queries for common patterns
+- **TOAST storage**: Large JSONB values stored out-of-line automatically
+
+---
+
+#### 3.7.4 Data Retrieval Patterns
+
+**Query Patterns:**
+
+1. **Agent Timeline Queries**:
+   - Composite index `(agent_id, created_at)` on `tasks`, `assets`, `posts`
+   - Efficient range queries for agent activity over time
+
+2. **HITL Queue Queries**:
+   - Partial index on `judge_reviews` where `routing_decision->>'action' = 'hitl_queue'`
+   - Filtered queries for pending human review items
+
+3. **Semantic Memory Retrieval**:
+   - Vector similarity search via Weaviate
+   - Relevance scoring and top-K retrieval
+   - Episodic memory retrieval from Redis (fast lookup)
+
+4. **Analytics Queries**:
+   - Materialized views for cost aggregation by agent/campaign
+   - Partition pruning for time-range queries on `engagement_metrics`
+   - JSONB path queries for filtering by metadata
+
+5. **Fleet Status Queries**:
+   - Real-time queue depths from Redis
+   - Agent status aggregation from `agents` table
+   - Error rate calculations from recent `tasks` with error status
+
+**Retrieval Optimization:**
+- **Read replicas**: PostgreSQL read replicas for analytics queries (separate from primary)
+- **Connection pooling**: PgBouncer for connection management
+- **Query result caching**: Redis cache for frequently accessed data (agent configs, campaign details)
+- **Lazy loading**: Large JSONB fields (lineage, metadata) loaded on-demand
+
+---
+
+#### 3.7.5 Migration Strategy
+
+**Database Migrations:**
+
+1. **Schema Versioning**:
+   - Use Alembic (Python) or Flyway (Java) for migration management
+   - Version-controlled migration scripts in `migrations/` directory
+   - Forward-only migrations (no rollbacks for production data)
+
+2. **Zero-Downtime Migrations**:
+   - **Additive changes**: New columns/tables added without locking
+   - **Column additions**: Use `ALTER TABLE ... ADD COLUMN ... DEFAULT ...` (PostgreSQL 11+)
+   - **Index creation**: Use `CREATE INDEX CONCURRENTLY` for large tables
+   - **Partition management**: Add new partitions without downtime
+
+3. **Data Migrations**:
+   - **Backfill scripts**: Run in batches during low-traffic periods
+   - **Dual-write pattern**: Write to both old and new schemas during transition
+   - **Validation**: Compare old vs. new data before cutover
+
+4. **Partition Management**:
+   - **Monthly partition creation**: Automated via cron job (creates next month's partition)
+   - **Partition archival**: Automated script moves old partitions to cold storage
+   - **Partition cleanup**: Drop archived partitions after S3 backup verification
+
+5. **Rollback Strategy**:
+   - **Feature flags**: Use feature flags to disable new functionality if issues arise
+   - **Database backups**: Continuous WAL archiving for point-in-time recovery
+   - **Schema rollback**: Only for non-data-affecting changes (index drops, constraint removals)
+
+**Example Migration Script Structure:**
+```sql
+-- migrations/001_initial_schema.sql
+-- migrations/002_add_wallet_tables.sql
+-- migrations/003_add_memory_tables.sql
+-- migrations/004_partition_engagement_metrics.sql
+-- migrations/005_add_character_references.sql
+```
+
+---
+
 ## 4. Pydantic Models (Python)
 
 ### 4.1 Task Model
@@ -1542,6 +1743,560 @@ All APIs return errors in this format:
 - `rate_limit_exceeded`: Rate limit exceeded
 - `budget_exceeded`: Budget limit exceeded
 - `internal_error`: Internal server error
+
+---
+
+## 6. Frontend Specification
+
+### 6.1 Overview
+
+The Project Chimera frontend is a **web-based dashboard** that provides operators and moderators with comprehensive visibility and control over the autonomous influencer fleet. The frontend is built as a **Single Page Application (SPA)** with real-time updates via WebSocket connections.
+
+**Technology Stack:**
+- **Framework**: React 18+ with TypeScript
+- **State Management**: Redux Toolkit or Zustand
+- **UI Library**: Material-UI (MUI) or Tailwind CSS + Headless UI
+- **Real-time**: WebSocket (Socket.io) for live updates
+- **Data Fetching**: React Query (TanStack Query) for API integration
+- **Accessibility**: WCAG 2.1 AA compliance
+
+---
+
+### 6.2 Screen Inventory
+
+#### 6.2.1 Dashboard Screens
+
+**1. Fleet Overview Dashboard** (`/dashboard`)
+- **Purpose**: High-level fleet health and activity monitoring
+- **API Endpoint**: `GET /dashboard/fleet-status`
+- **Key Metrics Displayed**:
+  - Total agents (active/idle/error counts)
+  - Queue depths (task_queue, review_queue, hitl_queue)
+  - Error rates (last hour, last 24 hours)
+  - Recent errors list
+- **Components**:
+  - `FleetStatsCard`: Agent status summary
+  - `QueueDepthChart`: Real-time queue depth visualization
+  - `ErrorRateChart`: Error rate trends
+  - `RecentErrorsList`: Scrollable list of recent errors
+
+**2. HITL Review Queue** (`/dashboard/hitl-queue`)
+- **Purpose**: Human moderators review and approve/reject/edit content
+- **API Endpoints**:
+  - `GET /dashboard/hitl-queue` (list items)
+  - `POST /dashboard/hitl-queue/{review_id}/approve`
+  - `POST /dashboard/hitl-queue/{review_id}/reject`
+  - `POST /dashboard/hitl-queue/{review_id}/edit`
+- **Key Features**:
+  - Filterable queue (all/sensitive/low_confidence/financial)
+  - Artifact preview (text/image/video)
+  - Confidence score display
+  - Risk tags visualization
+  - Judge reasoning trace (expandable)
+  - Approve/Reject/Edit actions
+- **Components**:
+  - `HITLQueueFilter`: Filter dropdown
+  - `HITLItemCard`: Individual review item card
+  - `ArtifactPreview`: Media preview component
+  - `ConfidenceBadge`: Confidence score indicator
+  - `RiskTagsList`: Risk tags display
+  - `ActionButtons`: Approve/Reject/Edit buttons
+  - `EditModal`: Inline editing interface
+
+**3. Agent Management** (`/agents`)
+- **Purpose**: View and manage individual agents
+- **API Endpoints**:
+  - `GET /globalstate/{agent_id}` (agent details)
+  - `GET /dashboard/fleet-status` (agent list)
+- **Key Features**:
+  - Agent list with status indicators
+  - Agent detail view (goals, campaigns, tasks, wallet balance)
+  - Agent creation/editing (persona config)
+  - Agent pause/resume/delete actions
+- **Components**:
+  - `AgentList`: Table/grid of agents
+  - `AgentDetailView`: Agent information panel
+  - `AgentStatusBadge`: Status indicator
+  - `AgentActionsMenu`: Action dropdown
+
+**4. Campaign Composer** (`/campaigns/compose`)
+- **Purpose**: Create campaigns from natural language goals
+- **API Endpoints**:
+  - `POST /campaign/compose` (create campaign)
+  - `GET /campaign/{campaign_id}/task-tree` (visualize task DAG)
+- **Key Features**:
+  - Natural language goal input
+  - Target audience selection
+  - Budget constraints configuration
+  - Task DAG visualization (Mermaid diagram)
+  - Campaign approval workflow
+- **Components**:
+  - `CampaignComposerForm`: Natural language input form
+  - `TaskDAGVisualization`: Mermaid diagram renderer
+  - `BudgetConstraintsInput`: Budget configuration
+  - `CampaignPreview`: Preview before approval
+
+**5. Analytics Dashboard** (`/analytics`)
+- **Purpose**: Performance analytics and cost tracking
+- **API Endpoints**:
+  - `GET /dashboard/cost-metrics` (cost data)
+  - Custom analytics queries (aggregated from `engagement_metrics`, `cost_events`)
+- **Key Features**:
+  - Cost breakdown by category (inference, generation, posting, transactions)
+  - Cost trends over time
+  - Engagement metrics (views, likes, comments, shares)
+  - Agent performance comparison
+  - Campaign ROI analysis
+- **Components**:
+  - `CostMetricsChart`: Cost visualization
+  - `EngagementMetricsChart`: Engagement trends
+  - `AgentPerformanceTable`: Agent comparison table
+  - `CampaignROICard`: ROI metrics
+
+**6. Wallet Management** (`/wallets`)
+- **Purpose**: Monitor and manage agent wallets
+- **API Endpoints**:
+  - `GET /wallet/{agent_id}/balance` (wallet balance)
+  - `POST /wallet/{agent_id}/transfer` (transfer assets)
+  - `POST /wallet/{agent_id}/deploy-token` (deploy token)
+- **Key Features**:
+  - Wallet balance display (ETH, USDC, SOL)
+  - Transaction history
+  - Transfer interface (with CFO approval workflow)
+  - Token deployment interface
+- **Components**:
+  - `WalletBalanceCard`: Balance display
+  - `TransactionHistoryTable`: Transaction list
+  - `TransferForm`: Transfer interface
+  - `TokenDeployForm`: Token deployment interface
+
+**7. Content Library** (`/content`)
+- **Purpose**: Browse and manage generated content
+- **API Endpoints**:
+  - Custom queries on `assets` and `posts` tables
+- **Key Features**:
+  - Content grid (text, images, videos)
+  - Filter by agent, campaign, platform, date
+  - Content preview and details
+  - Download/export functionality
+- **Components**:
+  - `ContentGrid`: Media grid display
+  - `ContentFilter`: Filter sidebar
+  - `ContentDetailModal`: Content details popup
+
+**8. Settings & Policy** (`/settings`)
+- **Purpose**: Manage system settings and policies
+- **Key Features**:
+  - Policy version management (AGENTS.md, SOUL.md)
+  - Budget limits configuration
+  - HITL routing thresholds
+  - System configuration
+- **Components**:
+  - `PolicyEditor`: Policy file editor
+  - `BudgetSettingsForm`: Budget configuration
+  - `HITLThresholdsForm`: Confidence threshold settings
+
+---
+
+### 6.3 User Interaction Flows
+
+#### 6.3.1 Content Review Flow (HITL)
+
+**Flow Diagram:**
+```
+1. Moderator navigates to /dashboard/hitl-queue
+2. System fetches HITL queue items via GET /dashboard/hitl-queue
+3. Moderator views artifact preview (text/image/video)
+4. Moderator reviews confidence score, risk tags, Judge reasoning
+5. Moderator decision:
+   a. Approve → POST /dashboard/hitl-queue/{review_id}/approve
+   b. Reject → POST /dashboard/hitl-queue/{review_id}/reject
+   c. Edit → POST /dashboard/hitl-queue/{review_id}/edit
+6. System updates state and releases execution
+7. Real-time update via WebSocket (queue depth decreases)
+```
+
+**API Mapping:**
+- **List Items**: `GET /dashboard/hitl-queue?filter=all&limit=50&offset=0`
+- **Approve**: `POST /dashboard/hitl-queue/{review_id}/approve` with `{reviewer_id, notes?}`
+- **Reject**: `POST /dashboard/hitl-queue/{review_id}/reject` with `{reviewer_id, reason}`
+- **Edit**: `POST /dashboard/hitl-queue/{review_id}/edit` with `{reviewer_id, edits: {artifact, notes?}}`
+
+**Data Schema Mapping:**
+- **Response Fields**:
+  - `items[].review_id` → Display as item identifier
+  - `items[].artifact.content` → Render as preview (text/image/video)
+  - `items[].confidence_score` → Display as badge (color-coded: green >0.90, yellow 0.70-0.90, red <0.70)
+  - `items[].risk_tags` → Display as chip list
+  - `items[].judge_reasoning` → Display in expandable section
+  - `items[].created_at` → Display as "Pending since" timestamp
+
+---
+
+#### 6.3.2 Campaign Creation Flow
+
+**Flow Diagram:**
+```
+1. Operator navigates to /campaigns/compose
+2. Operator enters natural language goal (e.g., "Hype up the new sneaker drop to Gen-Z audience")
+3. Operator configures target audience, budget constraints, deadline
+4. System calls POST /campaign/compose
+5. System receives task DAG and estimated cost
+6. System visualizes task DAG (Mermaid diagram)
+7. Operator reviews task tree and approves/rejects
+8. If approved, campaign is created and tasks are enqueued
+```
+
+**API Mapping:**
+- **Compose**: `POST /campaign/compose` with `{agent_id, natural_language_goal, target_audience?, budget_constraints?, deadline?}`
+- **Visualize**: `GET /campaign/{campaign_id}/task-tree` returns `{task_tree: {root_tasks, tasks, edges, visualization}}`
+
+**Data Schema Mapping:**
+- **Request Fields**:
+  - `natural_language_goal` → Text input field
+  - `target_audience` → Select dropdown
+  - `budget_constraints.max_daily_spend` → Number input
+  - `budget_constraints.max_total_spend` → Number input
+- **Response Fields**:
+  - `campaign_id` → Display as campaign identifier
+  - `task_dag.tasks` → Render as Mermaid diagram nodes
+  - `task_dag.edges` → Render as Mermaid diagram edges
+  - `estimated_cost` → Display as cost estimate
+  - `estimated_duration` → Display as time estimate
+
+---
+
+#### 6.3.3 Analytics Filtering Flow
+
+**Flow Diagram:**
+```
+1. Operator navigates to /analytics
+2. Operator selects filters (agent_id, campaign_id, date range, platform)
+3. System fetches cost metrics via GET /dashboard/cost-metrics
+4. System fetches engagement metrics (custom query on engagement_metrics table)
+5. System renders charts and tables with filtered data
+6. Operator can export data as CSV/JSON
+```
+
+**API Mapping:**
+- **Cost Metrics**: `GET /dashboard/cost-metrics?agent_id={id}&campaign_id={id}&start_date={date}&end_date={date}`
+- **Engagement Metrics**: Custom query on `engagement_metrics` table (via backend aggregation endpoint)
+
+**Data Schema Mapping:**
+- **Response Fields**:
+  - `total_cost` → Display as total cost card
+  - `cost_by_category` → Render as pie chart
+  - `cost_by_agent[]` → Render as bar chart
+  - `cost_trends[]` → Render as line chart
+  - `budget_status` → Display as progress bar
+
+---
+
+#### 6.3.4 Agent Monitoring Flow
+
+**Flow Diagram:**
+```
+1. Operator navigates to /agents
+2. System fetches fleet status via GET /dashboard/fleet-status
+3. System displays agent list with status indicators
+4. Operator clicks on agent to view details
+5. System fetches agent state via GET /globalstate/{agent_id}
+6. System displays agent goals, campaigns, tasks, wallet balance
+7. Real-time updates via WebSocket (agent status changes)
+```
+
+**API Mapping:**
+- **Fleet Status**: `GET /dashboard/fleet-status`
+- **Agent State**: `GET /globalstate/{agent_id}`
+- **Wallet Balance**: `GET /wallet/{agent_id}/balance`
+
+**Data Schema Mapping:**
+- **Fleet Status Response**:
+  - `fleet_overview.total_agents` → Display as stat card
+  - `fleet_overview.active_agents` → Display as stat card
+  - `queue_depths.task_queue` → Display as queue depth indicator
+- **Agent State Response**:
+  - `goals[]` → Render as goal list
+  - `campaigns[]` → Render as campaign cards
+  - `active_tasks[]` → Render as task list
+  - `persona_config` → Display in persona panel
+
+---
+
+### 6.4 Component Hierarchy
+
+```
+App
+├── Layout
+│   ├── Header (navigation, user menu)
+│   ├── Sidebar (menu items)
+│   └── MainContent
+│       ├── Dashboard (/dashboard)
+│       │   ├── FleetStatsCard
+│       │   ├── QueueDepthChart
+│       │   ├── ErrorRateChart
+│       │   └── RecentErrorsList
+│       ├── HITLQueue (/dashboard/hitl-queue)
+│       │   ├── HITLQueueFilter
+│       │   └── HITLItemCard[]
+│       │       ├── ArtifactPreview
+│       │       ├── ConfidenceBadge
+│       │       ├── RiskTagsList
+│       │       ├── JudgeReasoning (expandable)
+│       │       └── ActionButtons
+│       ├── AgentManagement (/agents)
+│       │   ├── AgentList
+│       │   └── AgentDetailView
+│       │       ├── AgentStatusBadge
+│       │       ├── GoalsList
+│       │       ├── CampaignsList
+│       │       ├── TasksList
+│       │       └── WalletBalanceCard
+│       ├── CampaignComposer (/campaigns/compose)
+│       │   ├── CampaignComposerForm
+│       │   ├── TaskDAGVisualization
+│       │   └── CampaignPreview
+│       ├── Analytics (/analytics)
+│       │   ├── CostMetricsChart
+│       │   ├── EngagementMetricsChart
+│       │   └── AgentPerformanceTable
+│       ├── WalletManagement (/wallets)
+│       │   ├── WalletBalanceCard
+│       │   ├── TransactionHistoryTable
+│       │   └── TransferForm
+│       ├── ContentLibrary (/content)
+│       │   ├── ContentFilter
+│       │   └── ContentGrid
+│       └── Settings (/settings)
+│           ├── PolicyEditor
+│           └── BudgetSettingsForm
+└── Modals
+    ├── EditModal (HITL editing)
+    ├── ContentDetailModal
+    └── ConfirmationModal
+```
+
+---
+
+### 6.5 Wireframes & Design Artifacts
+
+#### 6.5.1 HITL Review Queue Wireframe
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Header: Project Chimera | HITL Review Queue        [User]   │
+├─────────────────────────────────────────────────────────────┤
+│ Sidebar │ Main Content Area                                  │
+│         │                                                    │
+│ [Dashboard] │ ┌──────────────────────────────────────────┐  │
+│ [HITL Queue]│ │ Filter: [All ▼] [Sensitive] [Low Conf] │  │
+│ [Agents]    │ ├──────────────────────────────────────────┤  │
+│ [Campaigns] │ │ Review Item #1                            │  │
+│ [Analytics] │ │ ┌────────────────────────────────────┐   │  │
+│ [Wallets]   │ │ │ [Image Preview]                    │   │  │
+│ [Content]   │ │ │                                    │   │  │
+│ [Settings]  │ │ └────────────────────────────────────┘   │  │
+│             │ │ Confidence: [0.85] 🟡                    │  │
+│             │ │ Risk Tags: [sensitive_activity]           │  │
+│             │ │ Judge Reasoning: [▼ Expand]               │  │
+│             │ │ [Approve] [Reject] [Edit]                 │  │
+│             │ ├──────────────────────────────────────────┤  │
+│             │ │ Review Item #2                            │  │
+│             │ │ ...                                       │  │
+│             │ └──────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Design Specifications:**
+- **Layout**: Two-column layout (sidebar + main content)
+- **Card Design**: White cards with subtle shadows, rounded corners (8px)
+- **Confidence Badge**: Color-coded (green >0.90, yellow 0.70-0.90, red <0.70)
+- **Risk Tags**: Chip-style badges with warning colors
+- **Action Buttons**: Primary (Approve), Secondary (Reject), Tertiary (Edit)
+
+---
+
+#### 6.5.2 Fleet Overview Dashboard Wireframe
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Header: Project Chimera | Dashboard              [User]      │
+├─────────────────────────────────────────────────────────────┤
+│ Sidebar │ Main Content Area                                  │
+│         │                                                    │
+│ [Dashboard] │ ┌──────────┐ ┌──────────┐ ┌──────────┐      │
+│ [HITL Queue]│ │ Total    │ │ Active   │ │ Error    │      │
+│ [Agents]    │ │ Agents   │ │ Agents   │ │ Agents   │      │
+│ [Campaigns] │ │   1,234  │ │   1,200  │ │    12    │      │
+│ [Analytics] │ └──────────┘ └──────────┘ └──────────┘      │
+│ [Wallets]   │                                                │
+│ [Content]   │ ┌──────────────────────────────────────────┐  │
+│ [Settings]  │ │ Queue Depths (Real-time)                 │  │
+│             │ │ [Line Chart: task_queue, review_queue]  │  │
+│             │ └──────────────────────────────────────────┘  │
+│             │                                                │
+│             │ ┌──────────────────────────────────────────┐  │
+│             │ │ Error Rate Trends                        │  │
+│             │ │ [Line Chart: last hour, last 24 hours]  │  │
+│             │ └──────────────────────────────────────────┘  │
+│             │                                                │
+│             │ ┌──────────────────────────────────────────┐  │
+│             │ │ Recent Errors                             │  │
+│             │ │ [Scrollable list]                        │  │
+│             │ └──────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Design Specifications:**
+- **Stat Cards**: Large numbers with descriptive labels, color-coded (green for good, red for errors)
+- **Charts**: Responsive line/bar charts using Chart.js or Recharts
+- **Real-time Updates**: WebSocket connection for live data updates (every 5 seconds)
+
+---
+
+### 6.6 Interaction Patterns
+
+#### 6.6.1 Real-time Updates
+
+**Pattern**: WebSocket connection for live data updates
+
+- **Connection**: Establish WebSocket connection on app load
+- **Subscriptions**: Subscribe to channels (fleet_status, hitl_queue, agent_updates)
+- **Update Frequency**: Push updates every 5 seconds for queue depths, every 30 seconds for agent status
+- **Fallback**: Polling via REST API if WebSocket connection fails
+
+**Implementation:**
+```typescript
+// WebSocket subscription example
+socket.on('fleet_status_update', (data) => {
+  dispatch(updateFleetStatus(data));
+});
+
+socket.on('hitl_queue_update', (data) => {
+  dispatch(updateHITLQueue(data));
+});
+```
+
+---
+
+#### 6.6.2 Optimistic Updates
+
+**Pattern**: Update UI immediately, rollback on error
+
+- **Approve/Reject Actions**: Optimistically remove item from queue, show success toast
+- **Error Handling**: Rollback on API error, show error toast
+- **Loading States**: Show loading spinner during API call
+
+**Implementation:**
+```typescript
+// Optimistic update example
+const handleApprove = async (reviewId: string) => {
+  // Optimistic update
+  dispatch(removeHITLItem(reviewId));
+  
+  try {
+    await approveHITLItem(reviewId);
+    toast.success('Item approved');
+  } catch (error) {
+    // Rollback
+    dispatch(addHITLItemBack(reviewId));
+    toast.error('Approval failed');
+  }
+};
+```
+
+---
+
+#### 6.6.3 Infinite Scroll / Pagination
+
+**Pattern**: Load more items as user scrolls
+
+- **HITL Queue**: Infinite scroll (load 50 items at a time)
+- **Content Library**: Pagination (50 items per page)
+- **Transaction History**: Infinite scroll with "Load More" button
+
+---
+
+#### 6.6.4 Filter & Search
+
+**Pattern**: Debounced search with filter persistence
+
+- **Debounce**: 300ms delay for search input
+- **URL State**: Filters stored in URL query parameters
+- **Persistence**: Filters persist across page refreshes
+
+---
+
+### 6.7 Accessibility Standards
+
+**WCAG 2.1 AA Compliance:**
+
+1. **Keyboard Navigation**:
+   - All interactive elements keyboard-accessible
+   - Tab order follows logical flow
+   - Skip links for main content
+
+2. **Screen Reader Support**:
+   - ARIA labels for all interactive elements
+   - Semantic HTML (nav, main, article, section)
+   - Alt text for all images
+   - Live regions for real-time updates
+
+3. **Color Contrast**:
+   - Minimum 4.5:1 contrast ratio for text
+   - Color not sole indicator (use icons + color)
+
+4. **Focus Management**:
+   - Visible focus indicators (2px outline)
+   - Focus trap in modals
+   - Focus restoration after modal close
+
+5. **Responsive Design**:
+   - Mobile-first approach
+   - Breakpoints: 320px, 768px, 1024px, 1440px
+   - Touch targets minimum 44x44px
+
+**Example ARIA Implementation:**
+```tsx
+<button
+  aria-label="Approve content item"
+  aria-describedby="confidence-score"
+  onClick={handleApprove}
+>
+  Approve
+</button>
+<span id="confidence-score" className="sr-only">
+  Confidence score: 0.85
+</span>
+```
+
+---
+
+### 6.8 API Integration Mapping
+
+**Complete Field-to-API Mapping:**
+
+| Frontend Component | API Endpoint | Request Fields | Response Fields | Display Mapping |
+|-------------------|--------------|----------------|-----------------|-----------------|
+| `FleetStatsCard` | `GET /dashboard/fleet-status` | - | `fleet_overview.total_agents` | Display as "Total Agents" |
+| | | | `fleet_overview.active_agents` | Display as "Active Agents" |
+| | | | `fleet_overview.error_agents` | Display as "Error Agents" (red) |
+| `QueueDepthChart` | `GET /dashboard/fleet-status` | - | `queue_depths.task_queue` | Chart Y-axis value |
+| | | | `queue_depths.review_queue` | Chart Y-axis value |
+| | | | `queue_depths.hitl_queue` | Chart Y-axis value |
+| `HITLItemCard` | `GET /dashboard/hitl-queue` | `filter`, `limit`, `offset` | `items[].review_id` | Item identifier |
+| | | | `items[].artifact.content` | Render as preview |
+| | | | `items[].confidence_score` | Color-coded badge |
+| | | | `items[].risk_tags` | Chip list |
+| | `POST /dashboard/hitl-queue/{review_id}/approve` | `reviewer_id`, `notes?` | `approval_id` | Success confirmation |
+| `CostMetricsChart` | `GET /dashboard/cost-metrics` | `agent_id?`, `campaign_id?`, `start_date`, `end_date` | `total_cost` | Total cost card |
+| | | | `cost_by_category` | Pie chart data |
+| | | | `cost_trends[]` | Line chart data |
+| `WalletBalanceCard` | `GET /wallet/{agent_id}/balance` | - | `balances[].currency` | Currency label |
+| | | | `balances[].amount` | Amount display |
+| `CampaignComposerForm` | `POST /campaign/compose` | `agent_id`, `natural_language_goal`, `target_audience?`, `budget_constraints?` | `campaign_id` | Campaign identifier |
+| | | | `task_dag` | Mermaid diagram |
+| | | | `estimated_cost` | Cost estimate display |
 
 ---
 
